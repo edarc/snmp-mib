@@ -59,6 +59,27 @@ impl QualifiedDecl {
             MD::Imports(_) | MD::Irrelevant => RD::Irrelevant,
         }
     }
+
+    /// Extract an OID definition, if this declaration creates one.
+    pub(crate) fn oid_definition(&self) -> Option<(Identifier, OidDef)> {
+        use QualifiedDecl as RD;
+        match self {
+            RD::AgentCapabilities(i, rd) => Some((i.clone(), rd.clone())),
+            RD::ModuleCompliance(i, rd) => Some((i.clone(), rd.clone())),
+            RD::ModuleIdentity(i, rd) => Some((i.clone(), rd.clone())),
+            RD::NotificationGroup(i, rd, _) => Some((i.clone(), rd.clone())),
+            RD::NotificationType(i, rd, _) => Some((i.clone(), rd.clone())),
+            RD::ObjectGroup(i, rd, _) => Some((i.clone(), rd.clone())),
+            RD::ObjectIdentity(i, rd) => Some((i.clone(), rd.clone())),
+            RD::ObjectType(i, rd, ..) => Some((i.clone(), rd.clone())),
+            RD::PlainOidDef(i, rd) => Some((i.clone(), rd.clone())),
+            RD::TextualConvention(_, _)
+            | RD::TypeDef(_, _)
+            | RD::MacroDef(_)
+            | RD::Sequence(_)
+            | RD::Irrelevant => None,
+        }
+    }
 }
 
 /// Loader loads MIB modules from multiple files and resolves all identifiers to fully-qualified
@@ -72,7 +93,11 @@ impl Loader {
     }
 
     pub fn load_file(&mut self, path: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
-        let file = String::from_utf8(std::fs::read(path)?)?;
+        let module_name_fixups = vec![("RFC-1213".to_string(), "RFC1213-MIB".to_string())]
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+
+        let file = String::from_utf8(std::fs::read(path.as_ref())?)?;
         let (_, ParsedModule(this_module, mut decls)) =
             parse_module(&file).map_err(|e| e.to_string())?;
 
@@ -94,6 +119,7 @@ impl Loader {
                 ModuleDecl::Imports(h) => h,
                 _ => HashMap::new(),
             })
+            .map(|(n, m)| (n, module_name_fixups.get(&m).unwrap_or(&m).to_string()))
             .collect::<HashMap<_, _>>();
 
         // Generate a closure over the imports for this module that resolves a String containing an
@@ -102,7 +128,7 @@ impl Loader {
             let imports = &imports;
             let this_module = &this_module;
             move |id: String| {
-                let module_name = if id == "" {
+                let module_name = if id == "" || id == "iso" {
                     ""
                 } else {
                     imports.get(&id).unwrap_or(this_module)

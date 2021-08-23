@@ -267,7 +267,7 @@ where
     );
 
     map(
-        delimited(tok(tag("IMPORTS")), many1(import), tok(tag(";"))),
+        delimited(tok(tag("IMPORTS")), many1(import), opt(tok(tag(";")))),
         |many| {
             let imported_names = many
                 .into_iter()
@@ -607,7 +607,7 @@ where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
     let field = pair(identifier(), asn_type());
-    let fields = separated_list1(tok(tag(",")), field);
+    let fields = terminated(separated_list1(ptok(tag(",")), field), opt(ptok(tag(","))));
 
     map(
         tuple((
@@ -629,7 +629,7 @@ where
         tok(tag("MANDATORY-GROUPS")),
         delimited(
             ptok(tag("{")),
-            separated_list1(tok(tag(",")), identifier()),
+            separated_list1(ptok(tag(",")), identifier()),
             ptok(tag("}")),
         ),
     );
@@ -686,7 +686,7 @@ where
         tok(tag("OBJECTS")),
         delimited(
             ptok(tag("{")),
-            separated_list1(tok(tag(",")), identifier()),
+            separated_list1(ptok(tag(",")), identifier()),
             ptok(tag("}")),
         ),
     );
@@ -697,13 +697,14 @@ where
             objects,
             macro_status(),
             macro_description(),
+            macro_reference(),
             ptok(tag("::=")),
             oid_def(),
         )),
         |t| {
             ModuleDecl::ObjectGroup(
                 t.0.to_string(),
-                t.6,
+                t.7,
                 t.2.into_iter().map(|s| s.to_string()).collect(),
             )
         },
@@ -806,6 +807,30 @@ where
     )
 }
 
+/// Parse a `TRAP-TYPE` macro.
+fn trap_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
+where
+    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
+{
+    let identifier_list = || separated_list1(ptok(tag(",")), identifier());
+    map(
+        tuple((
+            identifier(),
+            tok(tag("TRAP-TYPE")),
+            preceded(tok(tag("ENTERPRISE")), identifier()),
+            preceded(
+                tok(tag("VARIABLES")),
+                delimited(ptok(tag("{")), identifier_list(), ptok(tag("}"))),
+            ),
+            macro_description(),
+            macro_reference(),
+            ptok(tag("::=")),
+            tok(digit1),
+        )),
+        |_| ModuleDecl::Irrelevant,
+    )
+}
+
 /// Parse a MIB module.
 ///
 /// This is the main entry point for the parser module.
@@ -827,6 +852,7 @@ pub fn parse_module(data: &str) -> IResult<&str, ParsedModule> {
         textual_convention(),
         // Must come after textual_convention.
         plain_type_def(),
+        trap_type(),
     )));
 
     let module_begin = tuple((tok(tag("DEFINITIONS")), ptok(tag("::=")), tok(tag("BEGIN"))));

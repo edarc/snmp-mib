@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 
-use super::{Identifier, OidDef};
+use crate::{Identifier, OidDef, TypeInfo};
 
 use nom::{
     branch::alt,
@@ -33,26 +33,13 @@ pub struct RawOidDef {
 impl RawOidDef {
     /// Convert this `RawOidDef` into an `OidDef` by qualifying the root identifier. The provided
     /// function should return a qualified `Identifier` given the unqualified identifier as a &str.
-    pub fn qualify(self, qualifier: impl Fn(&str) -> Identifier) -> OidDef {
-        let id = qualifier(&self.root);
+    pub fn qualify(self, resolve: impl Fn(String) -> Identifier) -> OidDef {
+        let id = resolve(self.root);
         OidDef {
             root: id,
             fragment: self.fragment,
         }
     }
-}
-
-/// Type information, which may or may not be interpreted.
-///
-/// Some kinds of type information are interesting for the interpretation of binding values, such
-/// as bitfields, named value enumerations, and OIDs. Many types are currently "uninterpreted"
-/// however, and the type declaration is just given as a string.
-#[derive(Clone, Debug)]
-pub enum TypeInfo {
-    BitField(HashMap<u16, String>),
-    Enumeration(HashMap<i64, String>),
-    Oid,
-    Uninterpreted(String),
 }
 
 /// The various kinds of declarations that occur in a MIB module. A parsed MIB module is
@@ -73,8 +60,16 @@ pub enum ModuleDecl {
     Sequence(String),
     TextualConvention(String, TypeInfo),
     TypeDef(String, TypeInfo),
-    #[allow(dead_code)]
     Irrelevant,
+}
+
+impl ModuleDecl {
+    pub fn is_imports(&self) -> bool {
+        match self {
+            ModuleDecl::Imports(_) => true,
+            _ => false,
+        }
+    }
 }
 
 /// This is the result of the parser, consisting of the module name and a sequence of

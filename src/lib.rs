@@ -1,14 +1,10 @@
-mod loader;
+pub mod loader;
 mod parser;
 
-use std::collections::BTreeMap;
-use std::error::Error;
-use std::path::Path;
+use std::collections::{BTreeMap, HashMap};
 
 use radix_trie::{Trie, TrieCommon};
 use smallvec::SmallVec;
-
-use crate::parser::ModuleDecl;
 
 pub fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
     oid.as_ref()
@@ -56,6 +52,19 @@ impl std::fmt::Display for OidDef {
     }
 }
 
+/// Type information, which may or may not be interpreted.
+///
+/// Some kinds of type information are interesting for the interpretation of binding values, such
+/// as bitfields, named value enumerations, and OIDs. Many types are currently "uninterpreted"
+/// however, and the type declaration is just given as a string.
+#[derive(Clone, Debug)]
+pub enum TypeInfo {
+    BitField(HashMap<u16, String>),
+    Enumeration(HashMap<i64, String>),
+    Oid,
+    Uninterpreted(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct MIBDefs {
     oid_defs: BTreeMap<Identifier, OidDef>,
@@ -84,49 +93,6 @@ impl MIBDefs {
             let def = &self.oid_defs[id];
             println!("{} ::= {} => {}", id, def, dotted_oid(exp));
         }
-    }
-
-    pub fn load_file(&mut self, path: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
-        let file = String::from_utf8(std::fs::read(path)?)?;
-        let (_, mut parsed) = parser::parse_module(&file).map_err(|e| e.to_string())?;
-      //parsed.imports.insert("iso".to_string(), "".to_string());
-      //
-      //let lookup = {
-      //    let imports = &parsed.imports;
-      //    let name = &parsed.name;
-      //    move |id: &str| {
-      //        let mod_name = if id == "" {
-      //            ""
-      //        } else {
-      //            imports.get(id).unwrap_or(&name)
-      //        }
-      //        .to_string();
-      //        Identifier(mod_name, id.to_string())
-      //    }
-      //};
-      //
-      //for decl in parsed.decls.iter() {
-      //    match decl {
-      //        ModuleDecl::AgentCapabilities(n, rd)
-      //        | ModuleDecl::ModuleCompliance(n, rd)
-      //        | ModuleDecl::ModuleIdentity(n, rd)
-      //        | ModuleDecl::NotificationGroup(n, rd, _)
-      //        | ModuleDecl::NotificationType(n, rd, _)
-      //        | ModuleDecl::ObjectGroup(n, rd, _)
-      //        | ModuleDecl::ObjectIdentity(n, rd)
-      //        | ModuleDecl::ObjectType(n, rd, _, _)
-      //        | ModuleDecl::PlainOidDef(n, rd) => {
-      //            self.oid_defs.insert(lookup(&n), rd.clone().qualify(lookup));
-      //        }
-      //        ModuleDecl::Irrelevant
-      //        | ModuleDecl::MacroDef(_)
-      //        | ModuleDecl::Sequence(_)
-      //        | ModuleDecl::TextualConvention(_, _)
-      //        | ModuleDecl::TypeDef(_, _) => {}
-      //    }
-      //}
-
-        Ok(())
     }
 
     pub fn reindex(&mut self) {

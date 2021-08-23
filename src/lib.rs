@@ -1,4 +1,5 @@
 pub mod loader;
+pub mod mib;
 mod parser;
 
 use std::collections::{BTreeMap, HashMap};
@@ -19,6 +20,14 @@ pub fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
 pub struct Identifier(pub String, pub String);
 
 impl Identifier {
+    pub fn new(modname: impl AsRef<str>, name: impl AsRef<str>) -> Self {
+        Identifier(modname.as_ref().to_string(), name.as_ref().to_string())
+    }
+
+    pub fn root() -> Self {
+        Identifier::new("", "")
+    }
+
     pub fn is_root(&self) -> bool {
         self.0 == "" && self.1 == ""
     }
@@ -33,7 +42,7 @@ impl std::fmt::Display for Identifier {
 /// Root reference, OID fragment
 #[derive(Clone, Debug)]
 pub struct OidDef {
-    pub root: Identifier,
+    pub parent: Identifier,
     pub fragment: SmallVec<[u32; 1]>,
 }
 
@@ -42,7 +51,7 @@ impl std::fmt::Display for OidDef {
         write!(
             f,
             "{}",
-            Some(&self.root)
+            Some(&self.parent)
                 .iter()
                 .map(ToString::to_string)
                 .chain(self.fragment.iter().map(ToString::to_string))
@@ -75,9 +84,9 @@ impl MIBDefs {
     pub fn new() -> Self {
         let mut oid_defs = BTreeMap::new();
         oid_defs.insert(
-            Identifier("".to_string(), "iso".to_string()),
+            Identifier::new("", "iso"),
             OidDef {
-                root: Identifier("".to_string(), "".to_string()),
+                parent: Identifier::root(),
                 fragment: [1].into(),
             },
         );
@@ -101,18 +110,18 @@ impl MIBDefs {
         for (id, def) in self.oid_defs.iter() {
             let mut expanded_def = def.clone();
             let OidDef {
-                ref mut root,
+                ref mut parent,
                 ref mut fragment,
             } = expanded_def;
 
             fragment.reverse();
-            while let Some(rootdef) = self.oid_defs.get(root) {
-                fragment.extend(rootdef.fragment.iter().rev().cloned());
-                *root = rootdef.root.clone();
+            while let Some(parent_def) = self.oid_defs.get(parent) {
+                fragment.extend(parent_def.fragment.iter().rev().cloned());
+                *parent = parent_def.parent.clone();
             }
             fragment.reverse();
 
-            if expanded_def.root.is_root() {
+            if expanded_def.parent.is_root() {
                 self.oid_tree
                     .insert(expanded_def.fragment.to_vec(), id.clone());
             } else {
@@ -127,7 +136,7 @@ impl MIBDefs {
         let id = st.value().unwrap().clone();
         let suffix = &oid[st.key().unwrap().len()..];
         OidDef {
-            root: id,
+            parent: id,
             fragment: suffix.into(),
         }
     }

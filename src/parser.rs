@@ -26,17 +26,17 @@ use smallvec::SmallVec;
 /// happens in the `Loader`.
 #[derive(Clone, Debug)]
 pub struct RawOidDef {
-    root: String,
+    parent: String,
     fragment: SmallVec<[u32; 1]>,
 }
 
 impl RawOidDef {
-    /// Convert this `RawOidDef` into an `OidDef` by qualifying the root identifier. The provided
+    /// Convert this `RawOidDef` into an `OidDef` by qualifying the parent identifier. The provided
     /// function should return a qualified `Identifier` given the unqualified identifier as a &str.
     pub fn qualify(self, resolve: impl Fn(String) -> Identifier) -> OidDef {
-        let id = resolve(self.root);
+        let id = resolve(self.parent);
         OidDef {
-            root: id,
+            parent: id,
             fragment: self.fragment,
         }
     }
@@ -156,7 +156,7 @@ where
             ptok(tag("}")),
         ),
         |(id, frag)| RawOidDef {
-            root: id.unwrap_or("").to_string(),
+            parent: id.unwrap_or("").to_string(),
             fragment: frag.into(),
         },
     )

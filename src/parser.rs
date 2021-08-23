@@ -550,8 +550,7 @@ where
         tuple((
             identifier(),
             tok(tag("OBJECT-TYPE")),
-            tok(tag("SYNTAX")),
-            asn_type(),
+            preceded(tok(tag("SYNTAX")), asn_type()),
             opt(preceded(tok(tag("UNITS")), quoted_string())),
             preceded(
                 tok(alt((tag("MAX-ACCESS"), tag("ACCESS")))),
@@ -565,7 +564,7 @@ where
             ptok(tag("::=")),
             oid_def(),
         )),
-        |t| ModuleDecl::ObjectType(t.0.to_string(), t.12, t.3, t.4.map(|s| s.to_string())),
+        |t| ModuleDecl::ObjectType(t.0.to_string(), t.11, t.2, t.3.map(|s| s.to_string())),
     )
 }
 

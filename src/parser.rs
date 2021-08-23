@@ -57,9 +57,9 @@ pub enum ModuleDecl {
     ObjectIdentity(String, RawOidDef),
     ObjectType(String, RawOidDef, TypeInfo, Option<String>),
     PlainOidDef(String, RawOidDef),
-    Sequence(String),
+    PlainSequence(String),
+    PlainTypeDef(String, TypeInfo),
     TextualConvention(String, TypeInfo),
-    TypeDef(String, TypeInfo),
     Irrelevant,
 }
 
@@ -500,7 +500,7 @@ where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
     map(tuple((identifier(), ptok(tag("::=")), asn_type())), |t| {
-        ModuleDecl::TypeDef(t.0.to_string(), t.2)
+        ModuleDecl::PlainTypeDef(t.0.to_string(), t.2)
     })
 }
 
@@ -616,7 +616,7 @@ where
             tok(tag("SEQUENCE")),
             delimited(ptok(tag("{")), fields, ptok(tag("}"))),
         )),
-        |t| ModuleDecl::Sequence(t.0.to_string()),
+        |t| ModuleDecl::PlainSequence(t.0.to_string()),
     )
 }
 

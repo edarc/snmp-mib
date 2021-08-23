@@ -18,9 +18,9 @@ pub enum QualifiedDecl {
     ObjectIdentity(Identifier, OidDef),
     ObjectType(Identifier, OidDef, TypeInfo, Option<String>),
     PlainOidDef(Identifier, OidDef),
-    Sequence(Identifier),
+    PlainSequence(Identifier),
+    PlainTypeDef(Identifier, TypeInfo),
     TextualConvention(Identifier, TypeInfo),
-    TypeDef(Identifier, TypeInfo),
     Irrelevant,
 }
 
@@ -53,9 +53,9 @@ impl QualifiedDecl {
             MD::ObjectIdentity(i, rd) => RD::ObjectIdentity(resolve(i), rd.qualify(resolve)),
             MD::ObjectType(i, rd, ti, u) => RD::ObjectType(resolve(i), rd.qualify(resolve), ti, u),
             MD::PlainOidDef(i, rd) => RD::PlainOidDef(resolve(i), rd.qualify(resolve)),
-            MD::Sequence(i) => RD::Sequence(resolve(i)),
+            MD::PlainSequence(i) => RD::PlainSequence(resolve(i)),
+            MD::PlainTypeDef(i, ti) => RD::PlainTypeDef(resolve(i), ti),
             MD::TextualConvention(i, ti) => RD::TextualConvention(resolve(i), ti),
-            MD::TypeDef(i, ti) => RD::TypeDef(resolve(i), ti),
             MD::Imports(_) | MD::Irrelevant => RD::Irrelevant,
         }
     }
@@ -73,10 +73,10 @@ impl QualifiedDecl {
             RD::ObjectIdentity(i, rd) => Some((i.clone(), rd.clone())),
             RD::ObjectType(i, rd, ..) => Some((i.clone(), rd.clone())),
             RD::PlainOidDef(i, rd) => Some((i.clone(), rd.clone())),
-            RD::TextualConvention(_, _)
-            | RD::TypeDef(_, _)
-            | RD::MacroDef(_)
-            | RD::Sequence(_)
+             RD::MacroDef(_)
+            | RD::PlainSequence(_)
+            | RD::PlainTypeDef(_, _)
+            | RD::TextualConvention(_, _)
             | RD::Irrelevant => None,
         }
     }

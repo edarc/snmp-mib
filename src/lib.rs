@@ -38,6 +38,26 @@ impl std::fmt::Display for Identifier {
     }
 }
 
+/// A trait for types that can be converted to Identifier.
+pub trait IntoIdentifier {
+    fn into_identifier(self) -> Identifier;
+}
+
+impl<M: AsRef<str>, N: AsRef<str>> IntoIdentifier for (M, N) {
+    fn into_identifier(self) -> Identifier {
+        Identifier::new(self.0.as_ref(), self.1.as_ref())
+    }
+}
+
+impl IntoIdentifier for &str {
+    fn into_identifier(self) -> Identifier {
+        let mut split = self.splitn(2, "::").collect::<Vec<_>>();
+        let rest = split.pop().unwrap();
+        let first = split.pop().unwrap_or("");
+        (first, rest).into_identifier()
+    }
+}
+
 /// Root reference, OID fragment
 #[derive(Clone, Debug)]
 pub struct OidExpr {
@@ -52,11 +72,48 @@ impl std::fmt::Display for OidExpr {
             "{}",
             Some(&self.parent)
                 .iter()
+                .filter(|p| !p.is_root())
                 .map(ToString::to_string)
                 .chain(self.fragment.iter().map(ToString::to_string))
                 .collect::<Vec<String>>()
                 .join(".")
         )
+    }
+}
+
+/// A trait for types that can be converted to OidExpr.
+pub trait IntoOidExpr {
+    fn into_oid_expr(self) -> Option<OidExpr>;
+}
+
+impl<P: IntoIdentifier, F: AsRef<[u32]>> IntoOidExpr for (P, F) {
+    fn into_oid_expr(self) -> Option<OidExpr> {
+        Some(OidExpr {
+            parent: self.0.into_identifier(),
+            fragment: self.1.as_ref().into(),
+        })
+    }
+}
+
+impl IntoOidExpr for &str {
+    fn into_oid_expr(self) -> Option<OidExpr> {
+        let split = self.split(".").collect::<Vec<_>>();
+        let mut fragments = split
+            .iter()
+            .rev()
+            .map(|f| f.parse::<u32>())
+            .take_while(|r| r.is_ok())
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+        fragments.reverse();
+        if fragments.len() == split.len() - 1 {
+            Some(OidExpr {
+                parent: split[0].into_identifier(),
+                fragment: fragments.into(),
+            })
+        } else {
+            None
+        }
     }
 }
 

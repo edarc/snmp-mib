@@ -29,55 +29,55 @@ impl QualifiedDecl {
     /// to the unqualified identifiers in the `ModuleDecl`.
     fn from_module_decl(md: ModuleDecl, resolve: impl Fn(String) -> Identifier) -> Self {
         use ModuleDecl as MD;
-        use QualifiedDecl as RD;
+        use QualifiedDecl as QD;
         match md {
-            MD::AgentCapabilities(i, rd) => RD::AgentCapabilities(resolve(i), rd.qualify(resolve)),
-            MD::MacroDef(i) => RD::MacroDef(resolve(i)),
-            MD::ModuleCompliance(i, rd) => RD::ModuleCompliance(resolve(i), rd.qualify(resolve)),
-            MD::ModuleIdentity(i, rd) => RD::ModuleIdentity(resolve(i), rd.qualify(resolve)),
-            MD::NotificationGroup(i, rd, mi) => RD::NotificationGroup(
+            MD::AgentCapabilities(i, rd) => QD::AgentCapabilities(resolve(i), rd.qualify(resolve)),
+            MD::MacroDef(i) => QD::MacroDef(resolve(i)),
+            MD::ModuleCompliance(i, rd) => QD::ModuleCompliance(resolve(i), rd.qualify(resolve)),
+            MD::ModuleIdentity(i, rd) => QD::ModuleIdentity(resolve(i), rd.qualify(resolve)),
+            MD::NotificationGroup(i, rd, mi) => QD::NotificationGroup(
                 resolve(i),
                 rd.qualify(&resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
-            MD::NotificationType(i, rd, mi) => RD::NotificationType(
+            MD::NotificationType(i, rd, mi) => QD::NotificationType(
                 resolve(i),
                 rd.qualify(&resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
-            MD::ObjectGroup(i, rd, mi) => RD::ObjectGroup(
+            MD::ObjectGroup(i, rd, mi) => QD::ObjectGroup(
                 resolve(i),
                 rd.qualify(&resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
-            MD::ObjectIdentity(i, rd) => RD::ObjectIdentity(resolve(i), rd.qualify(resolve)),
-            MD::ObjectType(i, rd, ti, u) => RD::ObjectType(resolve(i), rd.qualify(resolve), ti, u),
-            MD::PlainOidDef(i, rd) => RD::PlainOidDef(resolve(i), rd.qualify(resolve)),
-            MD::PlainSequence(i) => RD::PlainSequence(resolve(i)),
-            MD::PlainTypeDef(i, ti) => RD::PlainTypeDef(resolve(i), ti),
-            MD::TextualConvention(i, ti) => RD::TextualConvention(resolve(i), ti),
-            MD::Imports(_) | MD::Irrelevant => RD::Irrelevant,
+            MD::ObjectIdentity(i, rd) => QD::ObjectIdentity(resolve(i), rd.qualify(resolve)),
+            MD::ObjectType(i, rd, ti, u) => QD::ObjectType(resolve(i), rd.qualify(resolve), ti, u),
+            MD::PlainOidDef(i, rd) => QD::PlainOidDef(resolve(i), rd.qualify(resolve)),
+            MD::PlainSequence(i) => QD::PlainSequence(resolve(i)),
+            MD::PlainTypeDef(i, ti) => QD::PlainTypeDef(resolve(i), ti),
+            MD::TextualConvention(i, ti) => QD::TextualConvention(resolve(i), ti),
+            MD::Imports(_) | MD::Irrelevant => QD::Irrelevant,
         }
     }
 
     /// Extract an OID definition, if this declaration creates one.
     pub(crate) fn oid_definition(&self) -> Option<(Identifier, OidExpr)> {
-        use QualifiedDecl as RD;
+        use QualifiedDecl as QD;
         match self {
-            RD::AgentCapabilities(i, rd) => Some((i.clone(), rd.clone())),
-            RD::ModuleCompliance(i, rd) => Some((i.clone(), rd.clone())),
-            RD::ModuleIdentity(i, rd) => Some((i.clone(), rd.clone())),
-            RD::NotificationGroup(i, rd, _) => Some((i.clone(), rd.clone())),
-            RD::NotificationType(i, rd, _) => Some((i.clone(), rd.clone())),
-            RD::ObjectGroup(i, rd, _) => Some((i.clone(), rd.clone())),
-            RD::ObjectIdentity(i, rd) => Some((i.clone(), rd.clone())),
-            RD::ObjectType(i, rd, ..) => Some((i.clone(), rd.clone())),
-            RD::PlainOidDef(i, rd) => Some((i.clone(), rd.clone())),
-            RD::MacroDef(_)
-            | RD::PlainSequence(_)
-            | RD::PlainTypeDef(_, _)
-            | RD::TextualConvention(_, _)
-            | RD::Irrelevant => None,
+            QD::AgentCapabilities(i, rd) => Some((i.clone(), rd.clone())),
+            QD::ModuleCompliance(i, rd) => Some((i.clone(), rd.clone())),
+            QD::ModuleIdentity(i, rd) => Some((i.clone(), rd.clone())),
+            QD::NotificationGroup(i, rd, _) => Some((i.clone(), rd.clone())),
+            QD::NotificationType(i, rd, _) => Some((i.clone(), rd.clone())),
+            QD::ObjectGroup(i, rd, _) => Some((i.clone(), rd.clone())),
+            QD::ObjectIdentity(i, rd) => Some((i.clone(), rd.clone())),
+            QD::ObjectType(i, rd, ..) => Some((i.clone(), rd.clone())),
+            QD::PlainOidDef(i, rd) => Some((i.clone(), rd.clone())),
+            QD::MacroDef(_)
+            | QD::PlainSequence(..)
+            | QD::PlainTypeDef(..)
+            | QD::TextualConvention(..)
+            | QD::Irrelevant => None,
         }
     }
 }

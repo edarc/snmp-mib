@@ -73,7 +73,7 @@ impl QualifiedDecl {
             RD::ObjectIdentity(i, rd) => Some((i.clone(), rd.clone())),
             RD::ObjectType(i, rd, ..) => Some((i.clone(), rd.clone())),
             RD::PlainOidDef(i, rd) => Some((i.clone(), rd.clone())),
-             RD::MacroDef(_)
+            RD::MacroDef(_)
             | RD::PlainSequence(_)
             | RD::PlainTypeDef(_, _)
             | RD::TextualConvention(_, _)

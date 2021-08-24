@@ -2,9 +2,8 @@ pub mod loader;
 pub mod mib;
 mod parser;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
-use radix_trie::{Trie, TrieCommon};
 use smallvec::SmallVec;
 
 pub fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
@@ -72,72 +71,4 @@ pub enum TypeInfo {
     Enumeration(HashMap<i64, String>),
     Oid,
     Uninterpreted(String),
-}
-
-#[derive(Clone, Debug)]
-pub struct MIBDefs {
-    oid_defs: BTreeMap<Identifier, OidDef>,
-    oid_tree: Trie<Vec<u32>, Identifier>,
-}
-
-impl MIBDefs {
-    pub fn new() -> Self {
-        let mut oid_defs = BTreeMap::new();
-        oid_defs.insert(
-            Identifier::new("", "iso"),
-            OidDef {
-                parent: Identifier::root(),
-                fragment: [1].into(),
-            },
-        );
-        let ret = Self {
-            oid_defs,
-            oid_tree: Trie::new(),
-        };
-        ret
-    }
-
-    pub fn dump(&self) {
-        for (exp, id) in self.oid_tree.iter() {
-            let def = &self.oid_defs[id];
-            println!("{} ::= {} => {}", id, def, dotted_oid(exp));
-        }
-    }
-
-    pub fn reindex(&mut self) {
-        self.oid_tree = Trie::new();
-
-        for (id, def) in self.oid_defs.iter() {
-            let mut expanded_def = def.clone();
-            let OidDef {
-                ref mut parent,
-                ref mut fragment,
-            } = expanded_def;
-
-            fragment.reverse();
-            while let Some(parent_def) = self.oid_defs.get(parent) {
-                fragment.extend(parent_def.fragment.iter().rev().cloned());
-                *parent = parent_def.parent.clone();
-            }
-            fragment.reverse();
-
-            if expanded_def.parent.is_root() {
-                self.oid_tree
-                    .insert(expanded_def.fragment.to_vec(), id.clone());
-            } else {
-                //println!("Orphan {}", expanded_def);
-            }
-        }
-    }
-
-    pub fn translate(&self, oid: impl AsRef<[u32]>) -> OidDef {
-        let oid = oid.as_ref().iter().cloned().collect::<Vec<_>>();
-        let st = self.oid_tree.get_ancestor(&oid).unwrap();
-        let id = st.value().unwrap().clone();
-        let suffix = &oid[st.key().unwrap().len()..];
-        OidDef {
-            parent: id,
-            fragment: suffix.into(),
-        }
-    }
 }

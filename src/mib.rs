@@ -16,6 +16,31 @@ pub struct MIB {
     by_name: BTreeMap<Identifier, Vec<u32>>,
 }
 
+impl MIB {
+    /// Look up a numeric OID and translate it to a maximally-specific `OidExpr`.
+    ///
+    /// The returned `OidExpr`'s parent will be whichever identifier known to this MIB matches the
+    /// largest prefix of the given OID. The fragment will contain any suffix for which the MIB
+    /// does not define a name.
+    pub fn translate_to_name(&self, oid: impl AsRef<[u32]>) -> OidDef {
+        let oid = oid.as_ref().iter().cloned().collect::<Vec<_>>();
+        let lookup = || {
+            let subtree = self.by_oid.get_ancestor(&oid)?;
+            let parent = subtree.value()?.clone();
+            let prefix_len = subtree.key()?.len();
+            let suffix = &oid[prefix_len..];
+            Some(OidDef {
+                parent: parent.id,
+                fragment: suffix.into(),
+            })
+        };
+        lookup().unwrap_or_else(|| OidDef {
+            parent: Identifier::root(),
+            fragment: oid.into(),
+        })
+    }
+}
+
 impl From<Loader> for MIB {
     fn from(loader: Loader) -> Self {
         let mut by_oid = Trie::new();

@@ -58,6 +58,12 @@ impl IntoIdentifier for &str {
     }
 }
 
+//impl IntoIdentifier for String {
+//    fn into_identifier(self) -> Identifier {
+//        self.as_str().into_identifier()
+//    }
+//}
+
 /// Root reference, OID fragment
 #[derive(Clone, Debug)]
 pub struct OidExpr {

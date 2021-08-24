@@ -40,12 +40,12 @@ impl std::fmt::Display for Identifier {
 
 /// Root reference, OID fragment
 #[derive(Clone, Debug)]
-pub struct OidDef {
+pub struct OidExpr {
     pub parent: Identifier,
     pub fragment: SmallVec<[u32; 1]>,
 }
 
-impl std::fmt::Display for OidDef {
+impl std::fmt::Display for OidExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
             f,

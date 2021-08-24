@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 
-use crate::{Identifier, OidDef, TypeInfo};
+use crate::{Identifier, OidExpr, TypeInfo};
 
 use nom::{
     branch::alt,
@@ -22,20 +22,21 @@ use nom::{
 };
 use smallvec::SmallVec;
 
-/// This is like an OidDef except the root identifier's module name is unresolved. Resolution
+/// This is like an OidExpr except the root identifier's module name is unresolved. Resolution
 /// happens in the `Loader`.
 #[derive(Clone, Debug)]
-pub struct RawOidDef {
+pub struct RawOidExpr {
     parent: String,
     fragment: SmallVec<[u32; 1]>,
 }
 
-impl RawOidDef {
-    /// Convert this `RawOidDef` into an `OidDef` by qualifying the parent identifier. The provided
-    /// function should return a qualified `Identifier` given the unqualified identifier as a &str.
-    pub fn qualify(self, resolve: impl Fn(String) -> Identifier) -> OidDef {
+impl RawOidExpr {
+    /// Convert this `RawOidExpr` into an `OidExpr` by qualifying the parent identifier. The
+    /// provided function should return a qualified `Identifier` given the unqualified identifier
+    /// as a &str.
+    pub fn qualify(self, resolve: impl Fn(String) -> Identifier) -> OidExpr {
         let id = resolve(self.parent);
-        OidDef {
+        OidExpr {
             parent: id,
             fragment: self.fragment,
         }
@@ -46,17 +47,17 @@ impl RawOidDef {
 /// essentially a sequence of these.
 #[derive(Clone, Debug)]
 pub enum ModuleDecl {
-    AgentCapabilities(String, RawOidDef),
+    AgentCapabilities(String, RawOidExpr),
     Imports(HashMap<String, String>),
     MacroDef(String),
-    ModuleCompliance(String, RawOidDef),
-    ModuleIdentity(String, RawOidDef),
-    NotificationGroup(String, RawOidDef, Vec<String>),
-    NotificationType(String, RawOidDef, Vec<String>),
-    ObjectGroup(String, RawOidDef, Vec<String>),
-    ObjectIdentity(String, RawOidDef),
-    ObjectType(String, RawOidDef, TypeInfo, Option<String>),
-    PlainOidDef(String, RawOidDef),
+    ModuleCompliance(String, RawOidExpr),
+    ModuleIdentity(String, RawOidExpr),
+    NotificationGroup(String, RawOidExpr, Vec<String>),
+    NotificationType(String, RawOidExpr, Vec<String>),
+    ObjectGroup(String, RawOidExpr, Vec<String>),
+    ObjectIdentity(String, RawOidExpr),
+    ObjectType(String, RawOidExpr, TypeInfo, Option<String>),
+    PlainOidDef(String, RawOidExpr),
     PlainSequence(String),
     PlainTypeDef(String, TypeInfo),
     TextualConvention(String, TypeInfo),
@@ -135,11 +136,11 @@ where
     )))
 }
 
-/// Parse an OID definition.
+/// Parse an OID expression.
 ///
 /// This requires that every entry in the definition except the first either be a plain integer, or
 /// a name with an associated integer like `dod(2)`.
-fn oid_def<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, RawOidDef, E>
+fn oid_expr<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, RawOidExpr, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -155,7 +156,7 @@ where
             pair(opt(identifier()), many0(tok(oid_elem))),
             ptok(tag("}")),
         ),
-        |(id, frag)| RawOidDef {
+        |(id, frag)| RawOidExpr {
             parent: id.unwrap_or("").to_string(),
             fragment: frag.into(),
         },
@@ -313,7 +314,7 @@ where
             macro_description(),
             many0(revision),
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| ModuleDecl::ModuleIdentity(t.0.to_string(), t.8),
     )
@@ -488,7 +489,7 @@ where
             tok(tag("OBJECT")),
             tok(tag("IDENTIFIER")),
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| ModuleDecl::PlainOidDef(t.0.to_string(), t.4),
     )
@@ -517,7 +518,7 @@ where
             macro_description(),
             macro_reference(),
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| ModuleDecl::ObjectIdentity(t.0.to_string(), t.6),
     )
@@ -562,7 +563,7 @@ where
             opt(alt((index, augments))),
             opt(macro_defval()),
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| ModuleDecl::ObjectType(t.0.to_string(), t.11, t.2, t.3.map(|s| s.to_string())),
     )
@@ -586,7 +587,7 @@ where
             macro_description(),
             macro_reference(),
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| {
             ModuleDecl::NotificationType(
@@ -671,7 +672,7 @@ where
             macro_reference(),
             modules,
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| ModuleDecl::ModuleCompliance(t.0.to_string(), t.7),
     )
@@ -699,7 +700,7 @@ where
             macro_description(),
             macro_reference(),
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| {
             ModuleDecl::ObjectGroup(
@@ -733,7 +734,7 @@ where
             macro_description(),
             macro_reference(),
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| {
             ModuleDecl::NotificationGroup(
@@ -801,7 +802,7 @@ where
             macro_reference(),
             many0(module),
             ptok(tag("::=")),
-            oid_def(),
+            oid_expr(),
         )),
         |t| ModuleDecl::AgentCapabilities(t.0.to_string(), t.8),
     )

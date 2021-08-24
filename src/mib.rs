@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use radix_trie::{Trie, TrieCommon};
 
 use crate::loader::Loader;
-use crate::{dotted_oid, Identifier, OidDef};
+use crate::{dotted_oid, Identifier, OidExpr};
 
 #[derive(Clone, Debug)]
 pub struct Entry {
@@ -22,19 +22,19 @@ impl MIB {
     /// The returned `OidExpr`'s parent will be whichever identifier known to this MIB matches the
     /// largest prefix of the given OID. The fragment will contain any suffix for which the MIB
     /// does not define a name.
-    pub fn translate_to_name(&self, oid: impl AsRef<[u32]>) -> OidDef {
+    pub fn translate_to_name(&self, oid: impl AsRef<[u32]>) -> OidExpr {
         let oid = oid.as_ref().iter().cloned().collect::<Vec<_>>();
         let lookup = || {
             let subtree = self.by_oid.get_ancestor(&oid)?;
             let parent = subtree.value()?.clone();
             let prefix_len = subtree.key()?.len();
             let suffix = &oid[prefix_len..];
-            Some(OidDef {
+            Some(OidExpr {
                 parent: parent.id,
                 fragment: suffix.into(),
             })
         };
-        lookup().unwrap_or_else(|| OidDef {
+        lookup().unwrap_or_else(|| OidExpr {
             parent: Identifier::root(),
             fragment: oid.into(),
         })
@@ -48,7 +48,7 @@ impl From<Loader> for MIB {
 
         let iso_def = (
             Identifier::new("", "iso"),
-            OidDef {
+            OidExpr {
                 parent: Identifier::root(),
                 fragment: [1].into(),
             },
@@ -84,7 +84,7 @@ impl From<Loader> for MIB {
     }
 }
 
-/// Link an Identifier-to-OidDef binding to the root of the OID tree.
+/// Link an Identifier-to-OidExpr binding to the root of the OID tree.
 ///
 /// Given a map of relative bindings `rel` like
 ///
@@ -113,8 +113,8 @@ impl From<Loader> for MIB {
 ///   possible (this is an error).
 fn link_to_root(
     id: &Identifier,
-    def: &OidDef,
-    rel: &BTreeMap<Identifier, OidDef>,
+    def: &OidExpr,
+    rel: &BTreeMap<Identifier, OidExpr>,
     abs: &mut BTreeMap<Identifier, Vec<u32>>,
 ) -> Result<Vec<u32>, Identifier> {
     let linked_def = if def.parent.is_root() {
@@ -127,7 +127,7 @@ fn link_to_root(
             .chain(def.fragment.iter())
             .cloned()
             .collect::<Vec<_>>();
-        OidDef {
+        OidExpr {
             parent: Identifier::root(),
             fragment: this_fragment.into(),
         }
@@ -135,7 +135,7 @@ fn link_to_root(
         // Parent is not linked. Recursively link it first.
         let mut linked_parent_fragment = link_to_root(&def.parent, parent_def, rel, abs)?;
         linked_parent_fragment.extend(def.fragment.iter().cloned());
-        OidDef {
+        OidExpr {
             parent: Identifier::root(),
             fragment: linked_parent_fragment.into(),
         }

@@ -3,21 +3,21 @@ use std::error::Error;
 use std::path::Path;
 
 use crate::parser::{parse_module, ModuleDecl, ParsedModule};
-use crate::{Identifier, OidDef, TypeInfo};
+use crate::{Identifier, OidExpr, TypeInfo};
 
 /// A `ModuleDecl` from the parser, but with all identifiers fully qualified from imports.
 #[derive(Clone, Debug)]
 pub enum QualifiedDecl {
-    AgentCapabilities(Identifier, OidDef),
+    AgentCapabilities(Identifier, OidExpr),
     MacroDef(Identifier),
-    ModuleCompliance(Identifier, OidDef),
-    ModuleIdentity(Identifier, OidDef),
-    NotificationGroup(Identifier, OidDef, Vec<Identifier>),
-    NotificationType(Identifier, OidDef, Vec<Identifier>),
-    ObjectGroup(Identifier, OidDef, Vec<Identifier>),
-    ObjectIdentity(Identifier, OidDef),
-    ObjectType(Identifier, OidDef, TypeInfo, Option<String>),
-    PlainOidDef(Identifier, OidDef),
+    ModuleCompliance(Identifier, OidExpr),
+    ModuleIdentity(Identifier, OidExpr),
+    NotificationGroup(Identifier, OidExpr, Vec<Identifier>),
+    NotificationType(Identifier, OidExpr, Vec<Identifier>),
+    ObjectGroup(Identifier, OidExpr, Vec<Identifier>),
+    ObjectIdentity(Identifier, OidExpr),
+    ObjectType(Identifier, OidExpr, TypeInfo, Option<String>),
+    PlainOidDef(Identifier, OidExpr),
     PlainSequence(Identifier),
     PlainTypeDef(Identifier, TypeInfo),
     TextualConvention(Identifier, TypeInfo),
@@ -61,7 +61,7 @@ impl QualifiedDecl {
     }
 
     /// Extract an OID definition, if this declaration creates one.
-    pub(crate) fn oid_definition(&self) -> Option<(Identifier, OidDef)> {
+    pub(crate) fn oid_definition(&self) -> Option<(Identifier, OidExpr)> {
         use QualifiedDecl as RD;
         match self {
             RD::AgentCapabilities(i, rd) => Some((i.clone(), rd.clone())),

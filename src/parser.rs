@@ -58,7 +58,7 @@ pub enum ModuleDecl {
     ObjectIdentity(String, RawOidExpr),
     ObjectType(String, RawOidExpr, TypeInfo, Option<String>),
     PlainOidDef(String, RawOidExpr),
-    PlainSequence(String),
+    PlainSequence(String, Vec<String>),
     PlainTypeDef(String, TypeInfo),
     TextualConvention(String, TypeInfo),
     Irrelevant,
@@ -386,13 +386,15 @@ where
     );
     let type_decl = context(
         "type decl",
-        tuple((
-            opt(type_tag),
-            opt(tok(tag("IMPLICIT"))),
-            opt(pair(tok(tag("SEQUENCE")), tok(tag("OF")))),
-            type_names(),
-            constraint(),
-        )),
+        map(
+            tuple((
+                opt(type_tag),
+                opt(tok(tag("IMPLICIT"))),
+                opt(pair(tok(tag("SEQUENCE")), tok(tag("OF")))),
+                recognize(pair(type_names(), constraint())),
+            )),
+            |t| (t.2.is_some(), t.3),
+        ),
     );
 
     let variant = || {
@@ -452,8 +454,13 @@ where
             ),
             |t| TypeInfo::Uninterpreted(t.trim().to_string()),
         ),
-        map(context("type decl", recognize(type_decl)), |t| {
-            TypeInfo::Uninterpreted(t.trim().to_string())
+        map(context("type decl", type_decl), |t| {
+            let unint = t.1.trim().to_string();
+            if t.0 {
+                TypeInfo::SequenceOfUninterpreted(unint)
+            } else {
+                TypeInfo::Uninterpreted(unint)
+            }
         }),
     ))
 }
@@ -607,7 +614,7 @@ fn plain_sequence_def<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Module
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
-    let field = pair(identifier(), asn_type());
+    let field = terminated(identifier(), asn_type());
     let fields = terminated(separated_list1(ptok(tag(",")), field), opt(ptok(tag(","))));
 
     map(
@@ -617,7 +624,12 @@ where
             tok(tag("SEQUENCE")),
             delimited(ptok(tag("{")), fields, ptok(tag("}"))),
         )),
-        |t| ModuleDecl::PlainSequence(t.0.to_string()),
+        |t| {
+            ModuleDecl::PlainSequence(
+                t.0.to_string(),
+                t.3.iter().map(ToString::to_string).collect(),
+            )
+        },
     )
 }
 

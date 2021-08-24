@@ -70,5 +70,6 @@ pub enum TypeInfo {
     BitField(HashMap<u16, String>),
     Enumeration(HashMap<i64, String>),
     Oid,
+    SequenceOfUninterpreted(String),
     Uninterpreted(String),
 }

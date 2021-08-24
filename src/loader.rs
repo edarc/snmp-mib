@@ -18,7 +18,7 @@ pub enum QualifiedDecl {
     ObjectIdentity(Identifier, OidExpr),
     ObjectType(Identifier, OidExpr, TypeInfo, Option<String>),
     PlainOidDef(Identifier, OidExpr),
-    PlainSequence(Identifier),
+    PlainSequence(Identifier, Vec<Identifier>),
     PlainTypeDef(Identifier, TypeInfo),
     TextualConvention(Identifier, TypeInfo),
     Irrelevant,
@@ -53,7 +53,9 @@ impl QualifiedDecl {
             MD::ObjectIdentity(i, rd) => QD::ObjectIdentity(resolve(i), rd.qualify(resolve)),
             MD::ObjectType(i, rd, ti, u) => QD::ObjectType(resolve(i), rd.qualify(resolve), ti, u),
             MD::PlainOidDef(i, rd) => QD::PlainOidDef(resolve(i), rd.qualify(resolve)),
-            MD::PlainSequence(i) => QD::PlainSequence(resolve(i)),
+            MD::PlainSequence(i, fs) => {
+                QD::PlainSequence(resolve(i), fs.into_iter().map(resolve).collect())
+            }
             MD::PlainTypeDef(i, ti) => QD::PlainTypeDef(resolve(i), ti),
             MD::TextualConvention(i, ti) => QD::TextualConvention(resolve(i), ti),
             MD::Imports(_) | MD::Irrelevant => QD::Irrelevant,

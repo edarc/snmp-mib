@@ -116,7 +116,7 @@ pub enum TypeTagClass {
 
 impl<ID> Type<ID>
 where
-    ID: PartialEq + Eq + std::hash::Hash,
+    ID: PartialEq + Eq,
 {
     fn new(ty: PlainType<ID>, constraint: Option<Constraint>, tag: Option<TypeTag>) -> Self {
         Self {
@@ -285,33 +285,25 @@ impl TypeTag {
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
-fn kw<'a, E>(word: &'static str) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    tok(tag(word))
+fn kw(word: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
+    move |input| tok(tag(word))(input)
 }
 
-fn sym<'a, E>(sym: &'static str) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    ptok(tag(sym))
+fn sym(sym: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
+    move |input| ptok(tag(sym))(input)
 }
 
-fn signed<'a, T, E>() -> impl FnMut(&'a str) -> IResult<&'a str, T, E>
+fn signed<T>(input: &str) -> IResult<&str, T>
 where
-    T: 'a + Num,
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
+    T: Num,
 {
     let dec = tok(recognize(pair(tag("-"), digit1)));
-    alt((map_opt(dec, |t| T::from_str_radix(t, 10).ok()), unsigned()))
+    alt((map_opt(dec, |t| T::from_str_radix(t, 10).ok()), unsigned))(input)
 }
 
-fn unsigned<'a, T, E>() -> impl FnMut(&'a str) -> IResult<&'a str, T, E>
+fn unsigned<T>(input: &str) -> IResult<&str, T>
 where
-    T: 'a + Num,
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
+    T: Num,
 {
     let dec = map_opt(digit1, |t| T::from_str_radix(t, 10).ok());
     let hex = map_opt(
@@ -330,69 +322,55 @@ where
         ),
         |t| T::from_str_radix(&t.into_iter().collect::<String>(), 2).ok(),
     );
-    tok(alt((dec, hex, bin)))
+    tok(alt((dec, hex, bin)))(input)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) fn asn_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Type<String>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    asn_type_common(builtin_type())
+pub(crate) fn asn_type(input: &str) -> IResult<&str, Type<String>> {
+    asn_type_common(&builtin_type)(input)
 }
 
 /// Workaround for a compiler hang which occurs if asn_type is used inside a production that is
 /// called from asn_type. This calls builtin_type_nonrec instead of builtin_type but is otherwise
 /// identical.
-fn asn_type_nonrec<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Type<String>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    asn_type_common(builtin_type_nonrec())
+fn asn_type_nonrec(input: &str) -> IResult<&str, Type<String>> {
+    asn_type_common(&builtin_type_nonrec)(input)
 }
 
-fn asn_type_common<'a, BI, E>(
-    builtin_type: BI,
-) -> impl FnMut(&'a str) -> IResult<&'a str, Type<String>, E>
-where
-    BI: 'a + FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>,
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    map(
-        tuple((
-            opt(type_tag()),
-            alt((
-                map(builtin_type, |t| PlainType::Builtin(t)),
-                map(pair(identifier(), opt(named_number_list())), |t| {
-                    PlainType::Referenced(t.0.to_string(), t.1)
-                }),
+fn asn_type_common<'a>(
+    builtin_type: &'a dyn Fn(&str) -> IResult<&str, BuiltinType<String>>,
+) -> impl 'a + Fn(&str) -> IResult<&str, Type<String>> {
+    move |input| {
+        map(
+            tuple((
+                opt(type_tag),
+                alt((
+                    map(builtin_type, |t| PlainType::Builtin(t)),
+                    map(pair(identifier, opt(named_number_list)), |t| {
+                        PlainType::Referenced(t.0.to_string(), t.1)
+                    }),
+                )),
+                opt(constraint),
             )),
-            opt(constraint()),
-        )),
-        |(tag, ty, cstr)| Type::new(ty, cstr, tag),
-    )
+            |(tag, ty, cstr)| Type::new(ty, cstr, tag),
+        )(input)
+    }
 }
 
-fn builtin_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn builtin_type(input: &str) -> IResult<&str, BuiltinType<String>> {
     alt((
-        builtin_type_nonrec(),
-        builtin_type_sequence(),
-        builtin_type_sequence_of(),
-        builtin_type_choice(),
-    ))
+        builtin_type_nonrec,
+        builtin_type_sequence,
+        builtin_type_sequence_of,
+        builtin_type_choice,
+    ))(input)
 }
 
 /// Workaround for a compiler hang which occurs if asn_type is used inside a production that is
 /// called from asn_type. All builtin_type alternates that do not transitively contain an asn_type
 /// production go here; alternates which do go in builtin_type directly.
-fn builtin_type_nonrec<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn builtin_type_nonrec(input: &str) -> IResult<&str, BuiltinType<String>> {
     alt((
         value(BuiltinType::Boolean, kw("BOOLEAN")),
         value(BuiltinType::OctetString, pair(kw("OCTET"), kw("STRING"))),
@@ -401,25 +379,21 @@ where
             pair(kw("OBJECT"), kw("IDENTIFIER")),
         ),
         value(BuiltinType::Null, kw("NULL")),
-        builtin_type_integer(),
-    ))
+        builtin_type_integer,
+    ))(input)
 }
 
-fn builtin_type_integer<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    map(preceded(kw("INTEGER"), opt(named_number_list())), |nnl| {
+fn builtin_type_integer(input: &str) -> IResult<&str, BuiltinType<String>> {
+    map(preceded(kw("INTEGER"), opt(named_number_list)), |nnl| {
         BuiltinType::Integer(nnl)
-    })
+    })(input)
 }
 
-fn named_number_list<'a, T, E>() -> impl FnMut(&'a str) -> IResult<&'a str, HashMap<String, T>, E>
+fn named_number_list<T>(input: &str) -> IResult<&str, HashMap<String, T>>
 where
-    T: 'a + Num,
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
+    T: Num,
 {
-    let named_number = pair(identifier(), delimited(sym("("), signed(), sym(")")));
+    let named_number = pair(identifier, delimited(sym("("), signed, sym(")")));
     map(
         delimited(
             sym("{"),
@@ -427,28 +401,20 @@ where
             sym("}"),
         ),
         |nnl| nnl.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
-    )
+    )(input)
 }
 
-fn builtin_type_sequence_of<'a, E>(
-) -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn builtin_type_sequence_of(input: &str) -> IResult<&str, BuiltinType<String>> {
     map(
-        preceded(pair(kw("SEQUENCE"), kw("OF")), asn_type_nonrec()),
+        preceded(pair(kw("SEQUENCE"), kw("OF")), asn_type_nonrec),
         |t| BuiltinType::SequenceOf(Box::new(t)),
-    )
+    )(input)
 }
 
-fn named_type_list_nonrec<'a, E>(
-) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<(String, Type<String>)>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn named_type_list_nonrec(input: &str) -> IResult<&str, Vec<(String, Type<String>)>> {
     map(
         terminated(
-            separated_list1(sym(","), pair(identifier(), asn_type_nonrec())),
+            separated_list1(sym(","), pair(identifier, asn_type_nonrec)),
             opt(sym(",")),
         ),
         |t| {
@@ -456,49 +422,37 @@ where
                 .map(|(name, ty)| (name.to_string(), ty.clone()))
                 .collect()
         },
-    )
+    )(input)
 }
 
 /// Extensions, exceptions, optional fields, default values, and COMPONENTS OF are not supported.
-fn builtin_type_sequence<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn builtin_type_sequence(input: &str) -> IResult<&str, BuiltinType<String>> {
     map(
         preceded(
             kw("SEQUENCE"),
-            delimited(sym("{"), named_type_list_nonrec(), sym("}")),
+            delimited(sym("{"), named_type_list_nonrec, sym("}")),
         ),
         |ntl| BuiltinType::Sequence(ntl),
-    )
+    )(input)
 }
 
-fn builtin_type_choice<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn builtin_type_choice(input: &str) -> IResult<&str, BuiltinType<String>> {
     map(
         preceded(
             kw("CHOICE"),
-            delimited(sym("{"), named_type_list_nonrec(), sym("}")),
+            delimited(sym("{"), named_type_list_nonrec, sym("}")),
         ),
         |ntl| BuiltinType::Choice(ntl),
-    )
+    )(input)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
 /// Significant subset of actual constraint grammar. Supports value and size only, and union of
 /// range and single value only.
-fn constraint<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Constraint, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn constraint(input: &str) -> IResult<&str, Constraint> {
     let size = map(
-        preceded(
-            kw("SIZE"),
-            delimited(sym("("), value_constraint(), sym(")")),
-        ),
+        preceded(kw("SIZE"), delimited(sym("("), value_constraint, sym(")"))),
         |Constraint { value, .. }| Constraint {
             size: value,
             value: None,
@@ -508,45 +462,39 @@ where
     map(
         delimited(
             sym("("),
-            separated_list1(sym(","), alt((size, value_constraint()))),
+            separated_list1(sym(","), alt((size, value_constraint))),
             sym(")"),
         ),
         |cs| {
             cs.into_iter()
                 .fold(Constraint::empty(), |acc, v| acc.union(v))
         },
-    )
+    )(input)
 }
 
-fn value_constraint<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Constraint, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    let lower = alt((value(None, sym("MIN")), map(signed(), Option::Some)));
-    let upper = alt((value(None, kw("MAX")), map(signed(), Option::Some)));
+fn value_constraint(input: &str) -> IResult<&str, Constraint> {
+    let lower = alt((value(None, sym("MIN")), map(signed, Option::Some)));
+    let upper = alt((value(None, kw("MAX")), map(signed, Option::Some)));
     let range = map(separated_pair(lower, sym(".."), upper), |t| match t {
         (Some(l), Some(u)) => ConstraintRange::Closed(l, u),
         (Some(l), None) => ConstraintRange::GreaterEq(l),
         (None, Some(u)) => ConstraintRange::LessEq(u),
         (None, None) => ConstraintRange::Full,
     });
-    let union_member = alt((range, map(signed(), |v| ConstraintRange::Point(v))));
+    let union_member = alt((range, map(signed, |v| ConstraintRange::Point(v))));
     map(separated_list1(sym("|"), union_member), |ums| {
         Constraint::values(
             ums.iter()
                 .cloned()
                 .map(ToConstraintRange::to_constraint_range),
         )
-    })
+    })(input)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
 /// Encoding references are not supported.
-pub fn type_tag<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, TypeTag, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+pub fn type_tag(input: &str) -> IResult<&str, TypeTag> {
     let class = map(
         opt(alt((
             value(TypeTagClass::Universal, kw("UNIVERSAL")),
@@ -563,9 +511,9 @@ where
         |t| t.unwrap_or(TypeTagKind::Unspecified),
     );
     map(
-        pair(delimited(sym("["), pair(class, unsigned()), sym("]")), kind),
+        pair(delimited(sym("["), pair(class, unsigned), sym("]")), kind),
         |((c, t), k)| TypeTag(k, c, t),
-    )
+    )(input)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -578,7 +526,7 @@ mod tests {
     macro_rules! parse_ok {
         ($parser:expr, $case:literal, $val:expr) => {
             assert_eq!(
-                $parser()($case),
+                $parser($case),
                 Ok::<_, nom::Err<VerboseError<&str>>>(("", $val))
             )
         };

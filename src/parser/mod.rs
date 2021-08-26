@@ -16,7 +16,6 @@ use nom::{
     bytes::complete::{is_not, tag},
     character::complete::{alpha1, alphanumeric1, digit1, multispace1, not_line_ending, one_of},
     combinator::{eof, map, not, opt, peek, recognize, value},
-    error::{ContextError, ParseError},
     multi::{many0, many1, many_till, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult,
@@ -79,13 +78,10 @@ impl ModuleDecl {
 pub struct ParsedModule(pub String, pub Vec<ModuleDecl>);
 
 /// Parse whitespace or comments and throw them away. Does *not* match zero length.
-fn ws_or_comment<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, (), E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn ws_or_comment(input: &str) -> IResult<&str, ()> {
     let white = || value((), multispace1);
     let comment = || value((), pair(tag("--"), not_line_ending));
-    value((), alt((comment(), white())))
+    value((), alt((comment(), white())))(input)
 }
 
 /// Wrap a punctuation parser to eat trailing whitespace.
@@ -96,12 +92,11 @@ where
 ///
 /// This whitespace eater is used for punctuation instead of `tok` as it will accept zero-length
 /// whitespace or comments after the token.
-pub(crate) fn ptok<'a, F, O, E>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+pub(crate) fn ptok<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
 where
-    F: 'a + FnMut(&'a str) -> IResult<&'a str, O, E>,
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
+    F: FnMut(&'a str) -> IResult<&'a str, O>,
 {
-    terminated(inner, many0(ws_or_comment()))
+    terminated(inner, many0(ws_or_comment))
 }
 
 /// Wrap a non-punctuation parser to eat trailing whitespace.
@@ -114,60 +109,50 @@ where
 /// amount of whitespace or comments (which it discards), or punctuation or EOF (which it does not
 /// consume) after the token. This prevents the problem of `ptok(tag("FOO"))` successfully matching
 /// `"FOObar"`, for example, when `FOO` is a keyword and `bar` is an identifier.
-pub(crate) fn tok<'a, F, O, E>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+pub(crate) fn tok<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
 where
-    F: 'a + FnMut(&'a str) -> IResult<&'a str, O, E>,
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
+    F: FnMut(&'a str) -> IResult<&'a str, O>,
 {
-    let punc = || value((), peek(one_of(".,;:()[]{}<>=|")));
-    let end = || value((), eof);
-    let del = || alt((value((), many1(ws_or_comment())), punc(), end()));
-    terminated(inner, del())
+    let punc = value((), peek(one_of(".,;:()[]{}<>=|")));
+    let end = value((), eof);
+    let del = alt((value((), many1(ws_or_comment)), punc, end));
+    terminated(inner, del)
 }
 
 /// Parse a MIB identifier.
-pub(crate) fn identifier<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+pub(crate) fn identifier(input: &str) -> IResult<&str, &str> {
     tok(recognize(pair(
         alpha1,
         many0(alt((alphanumeric1, tag("-")))),
-    )))
+    )))(input)
 }
 
 /// Parse an OID expression.
 ///
 /// This requires that every entry in the definition except the first either be a plain integer, or
 /// a name with an associated integer like `dod(2)`.
-fn oid_expr<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, RawOidExpr, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn oid_expr(input: &str) -> IResult<&str, RawOidExpr> {
     let num = || map(digit1, |v: &str| v.parse::<u32>().unwrap());
     let oid_elem = alt((
         num(),
-        delimited(pair(identifier(), tag("(")), num(), tag(")")),
+        delimited(pair(identifier, tag("(")), num(), tag(")")),
     ));
 
     map(
         delimited(
             ptok(tag("{")),
-            pair(opt(identifier()), many0(tok(oid_elem))),
+            pair(opt(identifier), many0(tok(oid_elem))),
             ptok(tag("}")),
         ),
         |(id, frag)| RawOidExpr {
             parent: id.unwrap_or("").to_string(),
             fragment: frag.into(),
         },
-    )
+    )(input)
 }
 
 /// Parse a `STATUS` stanza in an SMI macro.
-fn macro_status<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn macro_status(input: &str) -> IResult<&str, &str> {
     preceded(
         tok(tag("STATUS")),
         tok(alt((
@@ -177,30 +162,21 @@ where
             tag("deprecated"),
             tag("obsolete"),
         ))),
-    )
+    )(input)
 }
 
 /// Parse a `DESCRIPTION` stanza in an SMI macro.
-fn macro_description<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    preceded(tok(tag("DESCRIPTION")), quoted_string())
+fn macro_description(input: &str) -> IResult<&str, &str> {
+    preceded(tok(tag("DESCRIPTION")), quoted_string)(input)
 }
 
 /// Parse a `REFERENCE` stanza in an SMI macro.
-fn macro_reference<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Option<&'a str>, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    opt(preceded(tok(tag("REFERENCE")), quoted_string()))
+fn macro_reference(input: &str) -> IResult<&str, Option<&str>> {
+    opt(preceded(tok(tag("REFERENCE")), quoted_string))(input)
 }
 
 /// Parse a `DEFVAL` stanza in an SMI macro.
-fn macro_defval<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn macro_defval(input: &str) -> IResult<&str, &str> {
     let defval_val = alt((
         delimited(ptok(tag("{")), is_not("}"), ptok(tag("}"))),
         value("", pair(ptok(tag("{")), ptok(tag("}")))),
@@ -209,7 +185,7 @@ where
     preceded(
         tok(tag("DEFVAL")),
         delimited(ptok(tag("{")), defval_val, ptok(tag("}"))),
-    )
+    )(input)
 }
 
 /// Parse an access specifier.
@@ -217,10 +193,7 @@ where
 /// Depending on which macro it occurs in, only certain subsets of specifiers are grammatically
 /// valid by the standard, but that is ignored here and this parser is used universally to accept
 /// any allowed specifiers from every macro defined in SMI.
-fn access_specifier<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn access_specifier(input: &str) -> IResult<&str, &str> {
     tok(alt((
         tag("accessible-for-notify"),
         tag("not-accessible"),
@@ -228,37 +201,31 @@ where
         tag("read-create"),
         tag("read-only"),
         tag("read-write"),
-    )))
+    )))(input)
 }
 
 /// Parse a double-quoted string.
 ///
 /// String may potentially span many lines, as is common in MIB definitions. Does not currently
 /// support escaped close-quote.
-fn quoted_string<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn quoted_string(input: &str) -> IResult<&str, &str> {
     delimited(
         tag("\""),
         map(opt(is_not("\"")), |s| s.unwrap_or("")),
         tok(tag("\"")),
-    )
+    )(input)
 }
 
 /// Parse an `IMPORTS` stanza.
 ///
 /// Order and structure is not preserved; the parsed result contains a hash with a key for each
 /// imported name, and associated value the name of the module from which it was imported.
-fn imports<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn imports(input: &str) -> IResult<&str, ModuleDecl> {
     let import = map(
         separated_pair(
-            separated_list1(ptok(tag(",")), identifier()),
+            separated_list1(ptok(tag(",")), identifier),
             tok(tag("FROM")),
-            identifier(),
+            identifier,
         ),
         |(ids, modname)| {
             ids.into_iter()
@@ -277,127 +244,106 @@ where
                 .collect::<HashMap<_, _>>();
             ModuleDecl::Imports(imported_names)
         },
-    )
+    )(input)
 }
 
 /// Parse and discard an `EXPORTS` stanza.
 ///
 /// Successful parse always produces a `ModuleDecl::Irrelevant`.
-fn exports<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn exports(input: &str) -> IResult<&str, ModuleDecl> {
     value(
         ModuleDecl::Irrelevant,
         delimited(
             tok(tag("EXPORTS")),
-            separated_list1(tok(tag(",")), identifier()),
+            separated_list1(tok(tag(",")), identifier),
             tok(tag(";")),
         ),
-    )
+    )(input)
 }
 
 /// Parse a `MODULE-IDENTITY` macro.
-fn module_identity<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    let revision = tuple((tok(tag("REVISION")), quoted_string(), macro_description()));
+fn module_identity(input: &str) -> IResult<&str, ModuleDecl> {
+    let revision = tuple((tok(tag("REVISION")), quoted_string, macro_description));
 
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("MODULE-IDENTITY")),
-            preceded(tok(tag("LAST-UPDATED")), quoted_string()),
-            preceded(tok(tag("ORGANIZATION")), quoted_string()),
-            preceded(tok(tag("CONTACT-INFO")), quoted_string()),
-            macro_description(),
+            preceded(tok(tag("LAST-UPDATED")), quoted_string),
+            preceded(tok(tag("ORGANIZATION")), quoted_string),
+            preceded(tok(tag("CONTACT-INFO")), quoted_string),
+            macro_description,
             many0(revision),
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| ModuleDecl::ModuleIdentity(t.0.to_string(), t.8),
-    )
+    )(input)
 }
 
 /// Parse a `TEXTUAL-CONVENTION` macro.
-fn textual_convention<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn textual_convention(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
-            identifier(),
+            identifier,
             ptok(tag("::=")),
             tok(tag("TEXTUAL-CONVENTION")),
-            opt(preceded(tok(tag("DISPLAY-HINT")), quoted_string())),
-            macro_status(),
-            macro_description(),
-            macro_reference(),
-            preceded(tok(tag("SYNTAX")), asn_type()),
+            opt(preceded(tok(tag("DISPLAY-HINT")), quoted_string)),
+            macro_status,
+            macro_description,
+            macro_reference,
+            preceded(tok(tag("SYNTAX")), asn_type),
         )),
         |t| ModuleDecl::TextualConvention(t.0.to_string(), t.7),
-    )
+    )(input)
 }
 
 /// Parse a plain OID definition (one defined in ASN.1 without an SMI macro).
-fn plain_oid_def<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn plain_oid_def(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("OBJECT")),
             tok(tag("IDENTIFIER")),
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| ModuleDecl::PlainOidDef(t.0.to_string(), t.4),
-    )
+    )(input)
 }
 
 /// Parse a plain type definition (one defined in ASN.1 without an SMI macro).
-fn plain_type_def<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    map(tuple((identifier(), ptok(tag("::=")), asn_type())), |t| {
+fn plain_type_def(input: &str) -> IResult<&str, ModuleDecl> {
+    map(tuple((identifier, ptok(tag("::=")), asn_type)), |t| {
         ModuleDecl::PlainTypeDef(t.0.to_string(), t.2)
-    })
+    })(input)
 }
 
 /// Parse an `OBJECT-IDENTITY` macro.
-fn object_identity<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn object_identity(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("OBJECT-IDENTITY")),
-            macro_status(),
-            macro_description(),
-            macro_reference(),
+            macro_status,
+            macro_description,
+            macro_reference,
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| ModuleDecl::ObjectIdentity(t.0.to_string(), t.6),
-    )
+    )(input)
 }
 
 /// Parse an `OBJECT-TYPE` macro.
-fn object_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
     let index = value(
         (),
         preceded(
             tok(tag("INDEX")),
             delimited(
                 ptok(tag("{")),
-                separated_list1(ptok(tag(",")), pair(opt(tok(tag("IMPLIED"))), identifier())),
+                separated_list1(ptok(tag(",")), pair(opt(tok(tag("IMPLIED"))), identifier)),
                 ptok(tag("}")),
             ),
         ),
@@ -406,50 +352,47 @@ where
         (),
         preceded(
             tok(tag("AUGMENTS")),
-            delimited(ptok(tag("{")), identifier(), ptok(tag("}"))),
+            delimited(ptok(tag("{")), identifier, ptok(tag("}"))),
         ),
     );
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("OBJECT-TYPE")),
-            preceded(tok(tag("SYNTAX")), asn_type()),
-            opt(preceded(tok(tag("UNITS")), quoted_string())),
+            preceded(tok(tag("SYNTAX")), asn_type),
+            opt(preceded(tok(tag("UNITS")), quoted_string)),
             preceded(
                 tok(alt((tag("MAX-ACCESS"), tag("ACCESS")))),
-                access_specifier(),
+                access_specifier,
             ),
-            macro_status(),
-            macro_description(),
-            macro_reference(),
+            macro_status,
+            macro_description,
+            macro_reference,
             opt(alt((index, augments))),
-            opt(macro_defval()),
+            opt(macro_defval),
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| ModuleDecl::ObjectType(t.0.to_string(), t.11, t.2, t.3.map(|s| s.to_string())),
-    )
+    )(input)
 }
 
 /// Parse a `NOTIFICATION-TYPE` macro.
-fn notification_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    let objects = separated_list1(tok(tag(",")), identifier());
+fn notification_type(input: &str) -> IResult<&str, ModuleDecl> {
+    let objects = separated_list1(tok(tag(",")), identifier);
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("NOTIFICATION-TYPE")),
             opt(preceded(
                 tok(tag("OBJECTS")),
                 delimited(ptok(tag("{")), objects, ptok(tag("}"))),
             )),
-            macro_status(),
-            macro_description(),
-            macro_reference(),
+            macro_status,
+            macro_description,
+            macro_reference,
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| {
             ModuleDecl::NotificationType(
@@ -461,35 +404,29 @@ where
                     .collect(),
             )
         },
-    )
+    )(input)
 }
 
 /// Parse a `MODULE-COMPLIANCE` macro.
-fn module_compliance<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn module_compliance(input: &str) -> IResult<&str, ModuleDecl> {
     let mandatory_groups = preceded(
         tok(tag("MANDATORY-GROUPS")),
         delimited(
             ptok(tag("{")),
-            separated_list1(ptok(tag(",")), identifier()),
+            separated_list1(ptok(tag(",")), identifier),
             ptok(tag("}")),
         ),
     );
-    let compliance_group = preceded(
-        tok(tag("GROUP")),
-        terminated(identifier(), macro_description()),
-    );
+    let compliance_group = preceded(tok(tag("GROUP")), terminated(identifier, macro_description));
     let compliance_object = preceded(
         tok(tag("OBJECT")),
         terminated(
-            identifier(),
+            identifier,
             tuple((
-                opt(preceded(tok(tag("SYNTAX")), asn_type())),
-                opt(preceded(tok(tag("WRITE-SYNTAX")), asn_type())),
-                opt(preceded(tok(tag("MIN-ACCESS")), access_specifier())),
-                macro_description(),
+                opt(preceded(tok(tag("SYNTAX")), asn_type)),
+                opt(preceded(tok(tag("WRITE-SYNTAX")), asn_type)),
+                opt(preceded(tok(tag("MIN-ACCESS")), access_specifier)),
+                macro_description,
             )),
         ),
     );
@@ -499,7 +436,7 @@ where
             tok(tag("MODULE")),
             opt(pair(
                 not(alt((tag("MANDATORY-GROUPS"), tag("OBJECT"), tag("GROUP")))),
-                identifier(),
+                identifier,
             )),
         ),
         opt(mandatory_groups),
@@ -508,42 +445,39 @@ where
 
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("MODULE-COMPLIANCE")),
-            macro_status(),
-            macro_description(),
-            macro_reference(),
+            macro_status,
+            macro_description,
+            macro_reference,
             modules,
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| ModuleDecl::ModuleCompliance(t.0.to_string(), t.7),
-    )
+    )(input)
 }
 
 /// Parse an `OBJECT-GROUP` macro.
-fn object_group<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn object_group(input: &str) -> IResult<&str, ModuleDecl> {
     let objects = preceded(
         tok(tag("OBJECTS")),
         delimited(
             ptok(tag("{")),
-            separated_list1(ptok(tag(",")), identifier()),
+            separated_list1(ptok(tag(",")), identifier),
             ptok(tag("}")),
         ),
     );
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("OBJECT-GROUP")),
             objects,
-            macro_status(),
-            macro_description(),
-            macro_reference(),
+            macro_status,
+            macro_description,
+            macro_reference,
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| {
             ModuleDecl::ObjectGroup(
@@ -552,32 +486,29 @@ where
                 t.2.into_iter().map(|s| s.to_string()).collect(),
             )
         },
-    )
+    )(input)
 }
 
 /// Parse a `NOTIFICATION-GROUP` macro.
-fn notification_group<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn notification_group(input: &str) -> IResult<&str, ModuleDecl> {
     let notifications = preceded(
         tok(tag("NOTIFICATIONS")),
         delimited(
             ptok(tag("{")),
-            separated_list1(tok(tag(",")), identifier()),
+            separated_list1(tok(tag(",")), identifier),
             ptok(tag("}")),
         ),
     );
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("NOTIFICATION-GROUP")),
             notifications,
-            macro_status(),
-            macro_description(),
-            macro_reference(),
+            macro_status,
+            macro_description,
+            macro_reference,
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| {
             ModuleDecl::NotificationGroup(
@@ -586,49 +517,43 @@ where
                 t.2.into_iter().map(|s| s.to_string()).collect(),
             )
         },
-    )
+    )(input)
 }
 
 /// Parse a macro definition.
 ///
 /// The name is returned but the body is thrown away, as the grammars for SMI macros are all
 /// hard-coded in this parser.
-fn macro_def<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
+fn macro_def(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("MACRO")),
             ptok(tag("::=")),
             tok(tag("BEGIN")),
             many_till(tok(not_line_ending), tok(tag("END"))),
         )),
         |t| ModuleDecl::MacroDef(t.0.to_string()),
-    )
+    )(input)
 }
 
 /// Parse an `AGENT-CAPABILITIES` macro.
-fn agent_capabilities<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    let identifier_list = || separated_list1(ptok(tag(",")), identifier());
+fn agent_capabilities(input: &str) -> IResult<&str, ModuleDecl> {
+    let identifier_list = || separated_list1(ptok(tag(",")), identifier);
     let variation = tuple((
-        preceded(tok(tag("VARIATION")), identifier()),
-        opt(preceded(tok(tag("SYNTAX")), asn_type())),
-        opt(preceded(tok(tag("WRITE-SYNTAX")), asn_type())),
-        opt(preceded(tok(tag("ACCESS")), access_specifier())),
+        preceded(tok(tag("VARIATION")), identifier),
+        opt(preceded(tok(tag("SYNTAX")), asn_type)),
+        opt(preceded(tok(tag("WRITE-SYNTAX")), asn_type)),
+        opt(preceded(tok(tag("ACCESS")), access_specifier)),
         opt(preceded(
             tok(tag("CREATION-REQUIRES")),
             delimited(ptok(tag("{")), identifier_list(), ptok(tag("}"))),
         )),
-        opt(macro_defval()),
-        macro_description(),
+        opt(macro_defval),
+        macro_description,
     ));
     let module = tuple((
-        preceded(tok(tag("SUPPORTS")), identifier()),
+        preceded(tok(tag("SUPPORTS")), identifier),
         preceded(
             tok(tag("INCLUDES")),
             delimited(ptok(tag("{")), identifier_list(), ptok(tag("}"))),
@@ -637,42 +562,39 @@ where
     ));
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("AGENT-CAPABILITIES")),
-            preceded(tok(tag("PRODUCT-RELEASE")), quoted_string()),
-            macro_status(),
-            macro_description(),
-            macro_reference(),
+            preceded(tok(tag("PRODUCT-RELEASE")), quoted_string),
+            macro_status,
+            macro_description,
+            macro_reference,
             many0(module),
             ptok(tag("::=")),
-            oid_expr(),
+            oid_expr,
         )),
         |t| ModuleDecl::AgentCapabilities(t.0.to_string(), t.8),
-    )
+    )(input)
 }
 
 /// Parse a `TRAP-TYPE` macro.
-fn trap_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    let identifier_list = || separated_list1(ptok(tag(",")), identifier());
+fn trap_type(input: &str) -> IResult<&str, ModuleDecl> {
+    let identifier_list = || separated_list1(ptok(tag(",")), identifier);
     map(
         tuple((
-            identifier(),
+            identifier,
             tok(tag("TRAP-TYPE")),
-            preceded(tok(tag("ENTERPRISE")), identifier()),
+            preceded(tok(tag("ENTERPRISE")), identifier),
             preceded(
                 tok(tag("VARIABLES")),
                 delimited(ptok(tag("{")), identifier_list(), ptok(tag("}"))),
             ),
-            macro_description(),
-            macro_reference(),
+            macro_description,
+            macro_reference,
             ptok(tag("::=")),
             tok(digit1),
         )),
         |_| ModuleDecl::Irrelevant,
-    )
+    )(input)
 }
 
 /// Parse a MIB module.
@@ -680,28 +602,28 @@ where
 /// This is the main entry point for the parser module.
 pub fn parse_module(data: &str) -> IResult<&str, ParsedModule> {
     let module_decls = many0(alt((
-        agent_capabilities(),
-        exports(),
-        imports(),
-        macro_def(),
-        module_compliance(),
-        module_identity(),
-        notification_group(),
-        notification_type(),
-        object_group(),
-        object_identity(),
-        object_type(),
-        plain_oid_def(),
-        textual_convention(),
+        agent_capabilities,
+        exports,
+        imports,
+        macro_def,
+        module_compliance,
+        module_identity,
+        notification_group,
+        notification_type,
+        object_group,
+        object_identity,
+        object_type,
+        plain_oid_def,
+        textual_convention,
         // Must come after textual_convention.
-        plain_type_def(),
-        trap_type(),
+        plain_type_def,
+        trap_type,
     )));
 
     let module_begin = tuple((tok(tag("DEFINITIONS")), ptok(tag("::=")), tok(tag("BEGIN"))));
     let module_end = tok(tag("END"));
     let mut module = tuple((
-        preceded(many0(ws_or_comment()), identifier()),
+        preceded(many0(ws_or_comment), identifier),
         delimited(module_begin, module_decls, module_end),
     ));
 

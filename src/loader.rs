@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
-use crate::parser::{parse_module, ModuleDecl, ParsedModule, Type};
+use crate::parser::{parse_module, BuiltinType, ModuleDecl, ParsedModule, PlainType, Type};
 use crate::{Identifier, OidExpr};
 
 /// A `ModuleDecl` from the parser, but with all identifiers fully qualified from imports.
@@ -16,12 +16,65 @@ pub enum QualifiedDecl {
     NotificationType(Identifier, OidExpr, Vec<Identifier>),
     ObjectGroup(Identifier, OidExpr, Vec<Identifier>),
     ObjectIdentity(Identifier, OidExpr),
-    ObjectType(Identifier, OidExpr, Type, Option<String>),
+    ObjectType(Identifier, OidExpr, Type<Identifier>, Option<String>),
     PlainOidDef(Identifier, OidExpr),
-    PlainSequence(Identifier, Vec<Identifier>),
-    PlainTypeDef(Identifier, Type),
-    TextualConvention(Identifier, Type),
+    PlainTypeDef(Identifier, Type<Identifier>),
+    TextualConvention(Identifier, Type<Identifier>),
     Irrelevant,
+}
+
+trait Qualify {
+    type Output;
+    // This is &dyn Fn instead of impl Fn because some of the impls of this trait call each other
+    // recursively, and to avoid moving the closure into them we need to ref it, but with impl it
+    // recursively instantiates with more and more &'s in the type which explodes the compiler.
+    fn qualify(self, resolve: &dyn Fn(String) -> Identifier) -> Self::Output;
+}
+
+impl Qualify for Type<String> {
+    type Output = Type<Identifier>;
+    fn qualify(self, resolve: &dyn Fn(String) -> Identifier) -> Self::Output {
+        Type {
+            ty: self.ty.qualify(resolve),
+            constraint: self.constraint,
+            tag: self.tag,
+        }
+    }
+}
+
+impl Qualify for PlainType<String> {
+    type Output = PlainType<Identifier>;
+    fn qualify(self, resolve: &dyn Fn(String) -> Identifier) -> Self::Output {
+        match self {
+            PlainType::Builtin(bi) => PlainType::Builtin(bi.qualify(resolve)),
+            PlainType::Referenced(i, nvs) => PlainType::Referenced(resolve(i), nvs),
+        }
+    }
+}
+
+impl Qualify for BuiltinType<String> {
+    type Output = BuiltinType<Identifier>;
+    fn qualify(self, resolve: &dyn Fn(String) -> Identifier) -> Self::Output {
+        use BuiltinType as BI;
+        match self {
+            BI::Boolean => BI::Boolean,
+            BI::Choice(vs) => BI::Choice(
+                vs.into_iter()
+                    .map(|(v, ty)| (v, ty.qualify(resolve)))
+                    .collect(),
+            ),
+            BI::Integer(nvs) => BI::Integer(nvs),
+            BI::Null => BI::Null,
+            BI::ObjectIdentifier => BI::ObjectIdentifier,
+            BI::OctetString => BI::OctetString,
+            BI::Sequence(fs) => BI::Sequence(
+                fs.into_iter()
+                    .map(|(f, ty)| (f, ty.qualify(resolve)))
+                    .collect(),
+            ),
+            BI::SequenceOf(t) => BI::SequenceOf(Box::new(t.qualify(resolve))),
+        }
+    }
 }
 
 impl QualifiedDecl {
@@ -30,6 +83,7 @@ impl QualifiedDecl {
     fn from_module_decl(md: ModuleDecl, resolve: impl Fn(String) -> Identifier) -> Self {
         use ModuleDecl as MD;
         use QualifiedDecl as QD;
+        let resolve = &resolve;
         match md {
             MD::AgentCapabilities(i, rd) => QD::AgentCapabilities(resolve(i), rd.qualify(resolve)),
             MD::MacroDef(i) => QD::MacroDef(resolve(i)),
@@ -37,27 +91,26 @@ impl QualifiedDecl {
             MD::ModuleIdentity(i, rd) => QD::ModuleIdentity(resolve(i), rd.qualify(resolve)),
             MD::NotificationGroup(i, rd, mi) => QD::NotificationGroup(
                 resolve(i),
-                rd.qualify(&resolve),
+                rd.qualify(resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
             MD::NotificationType(i, rd, mi) => QD::NotificationType(
                 resolve(i),
-                rd.qualify(&resolve),
+                rd.qualify(resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
             MD::ObjectGroup(i, rd, mi) => QD::ObjectGroup(
                 resolve(i),
-                rd.qualify(&resolve),
+                rd.qualify(resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
             MD::ObjectIdentity(i, rd) => QD::ObjectIdentity(resolve(i), rd.qualify(resolve)),
-            MD::ObjectType(i, rd, ti, u) => QD::ObjectType(resolve(i), rd.qualify(resolve), ti, u),
-            MD::PlainOidDef(i, rd) => QD::PlainOidDef(resolve(i), rd.qualify(resolve)),
-            MD::PlainSequence(i, fs) => {
-                QD::PlainSequence(resolve(i), fs.into_iter().map(resolve).collect())
+            MD::ObjectType(i, rd, ti, u) => {
+                QD::ObjectType(resolve(i), rd.qualify(resolve), ti.qualify(resolve), u)
             }
-            MD::PlainTypeDef(i, ti) => QD::PlainTypeDef(resolve(i), ti),
-            MD::TextualConvention(i, ti) => QD::TextualConvention(resolve(i), ti),
+            MD::PlainOidDef(i, rd) => QD::PlainOidDef(resolve(i), rd.qualify(resolve)),
+            MD::PlainTypeDef(i, ti) => QD::PlainTypeDef(resolve(i), ti.qualify(resolve)),
+            MD::TextualConvention(i, ti) => QD::TextualConvention(resolve(i), ti.qualify(resolve)),
             MD::Imports(_) | MD::Irrelevant => QD::Irrelevant,
         }
     }
@@ -75,11 +128,9 @@ impl QualifiedDecl {
             QD::ObjectIdentity(i, rd) => Some((i.clone(), rd.clone())),
             QD::ObjectType(i, rd, ..) => Some((i.clone(), rd.clone())),
             QD::PlainOidDef(i, rd) => Some((i.clone(), rd.clone())),
-            QD::MacroDef(_)
-            | QD::PlainSequence(..)
-            | QD::PlainTypeDef(..)
-            | QD::TextualConvention(..)
-            | QD::Irrelevant => None,
+            QD::MacroDef(_) | QD::PlainTypeDef(..) | QD::TextualConvention(..) | QD::Irrelevant => {
+                None
+            }
         }
     }
 }

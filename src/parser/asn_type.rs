@@ -26,25 +26,34 @@ use nom::{
 use crate::parser::{identifier, ptok, tok};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Type {
-    pub ty: PlainType,
+pub struct Type<ID>
+where
+    ID: PartialEq + Eq,
+{
+    pub ty: PlainType<ID>,
     pub constraint: Option<Constraint>,
     pub tag: Option<TypeTag>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PlainType {
-    Builtin(BuiltinType),
-    Referenced(String, Option<HashMap<String, BigInt>>),
+pub enum PlainType<ID>
+where
+    ID: PartialEq + Eq,
+{
+    Builtin(BuiltinType<ID>),
+    Referenced(ID, Option<HashMap<String, BigInt>>),
     // Constrained,  <-- this is made non-recursive by moving constraints to Type
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BuiltinType {
+pub enum BuiltinType<ID>
+where
+    ID: PartialEq + Eq,
+{
     // BitString,
     Boolean,
     // CharacterString,
-    Choice(Vec<(String, Type)>),
+    Choice(Vec<(String, Type<ID>)>),
     // Date,
     // DateTime,
     // Duration,
@@ -54,15 +63,15 @@ pub enum BuiltinType {
     // InstanceOf,
     Integer(Option<HashMap<String, BigInt>>),
     // IRI,
-    // Null,
+    Null,
     // ObjectClassField,
     ObjectIdentifier,
     OctetString,
     // Real,
     // RelativeIRI,
     // RelativeOID,
-    Sequence(Vec<(String, Type)>),
-    SequenceOf(Box<Type>),
+    Sequence(Vec<(String, Type<ID>)>),
+    SequenceOf(Box<Type<ID>>),
     // Set,
     // SetOf,
     // Prefixed,  <-- this is made non-recursive by moving tags to Type
@@ -105,8 +114,11 @@ pub enum TypeTagClass {
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
-impl Type {
-    fn new(ty: PlainType, constraint: Option<Constraint>, tag: Option<TypeTag>) -> Self {
+impl<ID> Type<ID>
+where
+    ID: PartialEq + Eq + std::hash::Hash,
+{
+    fn new(ty: PlainType<ID>, constraint: Option<Constraint>, tag: Option<TypeTag>) -> Self {
         Self {
             ty,
             constraint,
@@ -115,7 +127,7 @@ impl Type {
     }
 
     #[cfg(test)]
-    fn plain(ty: PlainType) -> Self {
+    fn plain(ty: PlainType<ID>) -> Self {
         Self::new(ty, None, None)
     }
 
@@ -137,15 +149,15 @@ impl Type {
 }
 
 #[cfg(test)]
-impl PlainType {
+impl<ID> PlainType<ID> {
     fn into_type(self) -> Type {
         Type::plain(self)
     }
 }
 
 #[cfg(test)]
-impl BuiltinType {
-    fn into_plain(self) -> PlainType {
+impl<ID> BuiltinType<ID> {
+    fn into_plain(self) -> PlainType<ID> {
         PlainType::Builtin(self)
     }
 }
@@ -323,7 +335,7 @@ where
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) fn asn_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Type, E>
+pub(crate) fn asn_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Type<String>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -333,16 +345,18 @@ where
 /// Workaround for a compiler hang which occurs if asn_type is used inside a production that is
 /// called from asn_type. This calls builtin_type_nonrec instead of builtin_type but is otherwise
 /// identical.
-fn asn_type_nonrec<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Type, E>
+fn asn_type_nonrec<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Type<String>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
     asn_type_common(builtin_type_nonrec())
 }
 
-fn asn_type_common<'a, BI, E>(builtin_type: BI) -> impl FnMut(&'a str) -> IResult<&'a str, Type, E>
+fn asn_type_common<'a, BI, E>(
+    builtin_type: BI,
+) -> impl FnMut(&'a str) -> IResult<&'a str, Type<String>, E>
 where
-    BI: 'a + FnMut(&'a str) -> IResult<&'a str, BuiltinType, E>,
+    BI: 'a + FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>,
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
     map(
@@ -360,7 +374,7 @@ where
     )
 }
 
-fn builtin_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType, E>
+fn builtin_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -375,7 +389,7 @@ where
 /// Workaround for a compiler hang which occurs if asn_type is used inside a production that is
 /// called from asn_type. All builtin_type alternates that do not transitively contain an asn_type
 /// production go here; alternates which do go in builtin_type directly.
-fn builtin_type_nonrec<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType, E>
+fn builtin_type_nonrec<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -386,11 +400,12 @@ where
             BuiltinType::ObjectIdentifier,
             pair(kw("OBJECT"), kw("IDENTIFIER")),
         ),
+        value(BuiltinType::Null, kw("NULL")),
         builtin_type_integer(),
     ))
 }
 
-fn builtin_type_integer<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType, E>
+fn builtin_type_integer<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -415,7 +430,8 @@ where
     )
 }
 
-fn builtin_type_sequence_of<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType, E>
+fn builtin_type_sequence_of<'a, E>(
+) -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -425,7 +441,8 @@ where
     )
 }
 
-fn named_type_list_nonrec<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, Vec<(String, Type)>, E>
+fn named_type_list_nonrec<'a, E>(
+) -> impl FnMut(&'a str) -> IResult<&'a str, Vec<(String, Type<String>)>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -443,7 +460,7 @@ where
 }
 
 /// Extensions, exceptions, optional fields, default values, and COMPONENTS OF are not supported.
-fn builtin_type_sequence<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType, E>
+fn builtin_type_sequence<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -456,7 +473,7 @@ where
     )
 }
 
-fn builtin_type_choice<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType, E>
+fn builtin_type_choice<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, BuiltinType<String>, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {

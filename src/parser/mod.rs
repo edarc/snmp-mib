@@ -8,7 +8,7 @@ mod asn_type;
 use std::collections::HashMap;
 
 use self::asn_type::asn_type;
-pub use self::asn_type::Type;
+pub use self::asn_type::{BuiltinType, PlainType, Type};
 use crate::{Identifier, OidExpr};
 
 use nom::{
@@ -57,11 +57,10 @@ pub enum ModuleDecl {
     NotificationType(String, RawOidExpr, Vec<String>),
     ObjectGroup(String, RawOidExpr, Vec<String>),
     ObjectIdentity(String, RawOidExpr),
-    ObjectType(String, RawOidExpr, Type, Option<String>),
+    ObjectType(String, RawOidExpr, Type<String>, Option<String>),
     PlainOidDef(String, RawOidExpr),
-    PlainSequence(String, Vec<String>),
-    PlainTypeDef(String, Type),
-    TextualConvention(String, Type),
+    PlainTypeDef(String, Type<String>),
+    TextualConvention(String, Type<String>),
     Irrelevant,
 }
 
@@ -465,30 +464,6 @@ where
     )
 }
 
-/// Parse a plain sequence definition (one defined in ASN.1 without an SMI macro).
-fn plain_sequence_def<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    let field = terminated(identifier(), asn_type());
-    let fields = terminated(separated_list1(ptok(tag(",")), field), opt(ptok(tag(","))));
-
-    map(
-        tuple((
-            identifier(),
-            ptok(tag("::=")),
-            tok(tag("SEQUENCE")),
-            delimited(ptok(tag("{")), fields, ptok(tag("}"))),
-        )),
-        |t| {
-            ModuleDecl::PlainSequence(
-                t.0.to_string(),
-                t.3.iter().map(ToString::to_string).collect(),
-            )
-        },
-    )
-}
-
 /// Parse a `MODULE-COMPLIANCE` macro.
 fn module_compliance<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, ModuleDecl, E>
 where
@@ -717,7 +692,6 @@ pub fn parse_module(data: &str) -> IResult<&str, ParsedModule> {
         object_identity(),
         object_type(),
         plain_oid_def(),
-        plain_sequence_def(),
         textual_convention(),
         // Must come after textual_convention.
         plain_type_def(),

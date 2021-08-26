@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use radix_trie::{Trie, TrieCommon};
 
 use crate::loader::{Loader, QualifiedDecl};
+use crate::parser::{BuiltinType, PlainType, Type};
 use crate::{/*dotted_oid,*/ Identifier, IntoOidExpr, OidExpr};
 
 #[derive(Clone, Debug)]
@@ -91,7 +92,7 @@ impl From<Loader> for MIB {
 }
 
 struct Linker {
-    pub sequence_defs: BTreeMap<Identifier, Vec<Identifier>>,
+    pub type_defs: BTreeMap<Identifier, Type<Identifier>>,
     pub relative_oid_defs: BTreeMap<Identifier, OidExpr>,
     pub absolute_oids: BTreeMap<Identifier, Vec<u32>>,
     pub orphan_identifiers: BTreeSet<Identifier>,
@@ -100,7 +101,7 @@ struct Linker {
 impl Linker {
     fn new_empty() -> Self {
         Self {
-            sequence_defs: BTreeMap::new(),
+            type_defs: BTreeMap::new(),
             absolute_oids: BTreeMap::new(),
             orphan_identifiers: BTreeSet::new(),
             relative_oid_defs: Some((
@@ -124,8 +125,17 @@ impl Linker {
             }
 
             match decl {
-                QualifiedDecl::PlainSequence(id, fields) => {
-                    new.sequence_defs.insert(id, fields);
+                QualifiedDecl::PlainTypeDef(id, ty) => {
+                    match &ty {
+                        Type {
+                            ty: PlainType::Builtin(BuiltinType::Sequence(_)),
+                            ..
+                        } => {}
+                        ty => {
+                            println!("{} => {:#?}", id, ty);
+                        }
+                    }
+                    new.type_defs.insert(id, ty);
                 }
                 _ => {}
             }

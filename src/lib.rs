@@ -4,6 +4,8 @@ mod parser;
 
 use smallvec::SmallVec;
 
+pub use crate::parser::Type;
+
 pub fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
     oid.as_ref()
         .iter()

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
-use crate::parser::{parse_module, ModuleDecl, ParsedModule};
-use crate::{Identifier, OidExpr, TypeInfo};
+use crate::parser::{parse_module, ModuleDecl, ParsedModule, Type};
+use crate::{Identifier, OidExpr};
 
 /// A `ModuleDecl` from the parser, but with all identifiers fully qualified from imports.
 #[derive(Clone, Debug)]
@@ -16,11 +16,11 @@ pub enum QualifiedDecl {
     NotificationType(Identifier, OidExpr, Vec<Identifier>),
     ObjectGroup(Identifier, OidExpr, Vec<Identifier>),
     ObjectIdentity(Identifier, OidExpr),
-    ObjectType(Identifier, OidExpr, TypeInfo, Option<String>),
+    ObjectType(Identifier, OidExpr, Type, Option<String>),
     PlainOidDef(Identifier, OidExpr),
     PlainSequence(Identifier, Vec<Identifier>),
-    PlainTypeDef(Identifier, TypeInfo),
-    TextualConvention(Identifier, TypeInfo),
+    PlainTypeDef(Identifier, Type),
+    TextualConvention(Identifier, Type),
     Irrelevant,
 }
 

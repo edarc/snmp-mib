@@ -2,8 +2,6 @@ pub mod loader;
 pub mod mib;
 mod parser;
 
-use std::collections::HashMap;
-
 use smallvec::SmallVec;
 
 pub fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
@@ -57,12 +55,6 @@ impl IntoIdentifier for &str {
         (first, rest).into_identifier()
     }
 }
-
-//impl IntoIdentifier for String {
-//    fn into_identifier(self) -> Identifier {
-//        self.as_str().into_identifier()
-//    }
-//}
 
 /// Root reference, OID fragment
 #[derive(Clone, Debug)]
@@ -121,18 +113,4 @@ impl IntoOidExpr for &str {
             None
         }
     }
-}
-
-/// Type information, which may or may not be interpreted.
-///
-/// Some kinds of type information are interesting for the interpretation of binding values, such
-/// as bitfields, named value enumerations, and OIDs. Many types are currently "uninterpreted"
-/// however, and the type declaration is just given as a string.
-#[derive(Clone, Debug)]
-pub enum TypeInfo {
-    BitField(HashMap<u16, String>),
-    Enumeration(HashMap<i64, String>),
-    Oid,
-    SequenceOfUninterpreted(String),
-    Uninterpreted(String),
 }

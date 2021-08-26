@@ -3,19 +3,20 @@
 //! The main API surface consists of `ModuleDecl` and `parse_module`, where the latter parses a MIB
 //! module into a sequence of the former.
 
-use std::collections::HashMap;
-use std::convert::TryInto;
+mod asn_type;
 
-use crate::{Identifier, OidExpr, TypeInfo};
+use std::collections::HashMap;
+
+use self::asn_type::asn_type;
+pub use self::asn_type::Type;
+use crate::{Identifier, OidExpr};
 
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
-    character::complete::{
-        alpha1, alphanumeric1, digit1, hex_digit1, multispace1, not_line_ending, one_of,
-    },
+    character::complete::{alpha1, alphanumeric1, digit1, multispace1, not_line_ending, one_of},
     combinator::{eof, map, not, opt, peek, recognize, value},
-    error::{context, ContextError, ParseError},
+    error::{ContextError, ParseError},
     multi::{many0, many1, many_till, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult,
@@ -56,11 +57,11 @@ pub enum ModuleDecl {
     NotificationType(String, RawOidExpr, Vec<String>),
     ObjectGroup(String, RawOidExpr, Vec<String>),
     ObjectIdentity(String, RawOidExpr),
-    ObjectType(String, RawOidExpr, TypeInfo, Option<String>),
+    ObjectType(String, RawOidExpr, Type, Option<String>),
     PlainOidDef(String, RawOidExpr),
     PlainSequence(String, Vec<String>),
-    PlainTypeDef(String, TypeInfo),
-    TextualConvention(String, TypeInfo),
+    PlainTypeDef(String, Type),
+    TextualConvention(String, Type),
     Irrelevant,
 }
 
@@ -96,7 +97,7 @@ where
 ///
 /// This whitespace eater is used for punctuation instead of `tok` as it will accept zero-length
 /// whitespace or comments after the token.
-fn ptok<'a, F, O, E>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+pub(crate) fn ptok<'a, F, O, E>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
 where
     F: 'a + FnMut(&'a str) -> IResult<&'a str, O, E>,
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
@@ -114,19 +115,19 @@ where
 /// amount of whitespace or comments (which it discards), or punctuation or EOF (which it does not
 /// consume) after the token. This prevents the problem of `ptok(tag("FOO"))` successfully matching
 /// `"FOObar"`, for example, when `FOO` is a keyword and `bar` is an identifier.
-fn tok<'a, F, O, E>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+pub(crate) fn tok<'a, F, O, E>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
 where
     F: 'a + FnMut(&'a str) -> IResult<&'a str, O, E>,
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
-    let punc = || value((), peek(one_of(".,;:(){}<>=|")));
+    let punc = || value((), peek(one_of(".,;:()[]{}<>=|")));
     let end = || value((), eof);
     let del = || alt((value((), many1(ws_or_comment())), punc(), end()));
     terminated(inner, del())
 }
 
 /// Parse a MIB identifier.
-fn identifier<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
+pub(crate) fn identifier<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, E>
 where
     E: 'a + ParseError<&'a str> + ContextError<&'a str>,
 {
@@ -318,151 +319,6 @@ where
         )),
         |t| ModuleDecl::ModuleIdentity(t.0.to_string(), t.8),
     )
-}
-
-/// Parse an ASN type specification.
-///
-/// See `TypeInfo` for more information; tl;dr most types result in
-/// `TypeInfo::Uninterpreted("...")` and only "interesting" types are parsed into their own
-/// variants.
-fn asn_type<'a, E>() -> impl FnMut(&'a str) -> IResult<&'a str, TypeInfo, E>
-where
-    E: 'a + ParseError<&'a str> + ContextError<&'a str>,
-{
-    let signed = || {
-        alt((
-            recognize(pair(opt(tag("-")), digit1)),
-            recognize(delimited(tag("'"), hex_digit1, ptok(tag("'h")))),
-        ))
-    };
-    let range = || {
-        recognize(separated_pair(
-            tok(signed()),
-            ptok(tag("..")),
-            tok(signed()),
-        ))
-    };
-    let alternates = || {
-        context(
-            "alternates",
-            recognize(separated_list1(
-                ptok(tag("|")),
-                tok(alt((range(), signed()))),
-            )),
-        )
-    };
-    let size = || {
-        context(
-            "size",
-            recognize(pair(
-                tok(tag("SIZE")),
-                delimited(ptok(tag("(")), alternates(), ptok(tag(")"))),
-            )),
-        )
-    };
-    let constraint = || {
-        context(
-            "constraint",
-            opt(delimited(
-                ptok(tag("(")),
-                alt((alternates(), size())),
-                ptok(tag(")")),
-            )),
-        )
-    };
-
-    let type_names = || {
-        context(
-            "type name",
-            alt((
-                tok(recognize(pair(tok(tag("OCTET")), tag("STRING")))),
-                identifier(),
-            )),
-        )
-    };
-    let type_tag = context(
-        "type tag",
-        tuple((ptok(tag("[")), is_not("]"), ptok(tag("]")))),
-    );
-    let type_decl = context(
-        "type decl",
-        map(
-            tuple((
-                opt(type_tag),
-                opt(tok(tag("IMPLICIT"))),
-                opt(pair(tok(tag("SEQUENCE")), tok(tag("OF")))),
-                recognize(pair(type_names(), constraint())),
-            )),
-            |t| (t.2.is_some(), t.3),
-        ),
-    );
-
-    let variant = || {
-        pair(
-            identifier(),
-            delimited(
-                ptok(tag("(")),
-                tok(map(signed(), |v: &str| v.parse::<i64>().unwrap())),
-                ptok(tag(")")),
-            ),
-        )
-    };
-    let variants = || separated_list1(ptok(tag(",")), variant());
-
-    alt((
-        map(
-            context(
-                "bit field",
-                pair(
-                    tok(tag("BITS")),
-                    delimited(ptok(tag("{")), variants(), ptok(tag("}"))),
-                ),
-            ),
-            |t| {
-                let vs =
-                    t.1.into_iter()
-                        .map(|(id, v)| (v.try_into().unwrap(), id.to_string()))
-                        .collect();
-                TypeInfo::BitField(vs)
-            },
-        ),
-        map(
-            context(
-                "enum",
-                pair(
-                    type_names(),
-                    delimited(ptok(tag("{")), variants(), ptok(tag("}"))),
-                ),
-            ),
-            |t| {
-                let vs = t.1.into_iter().map(|(id, v)| (v, id.to_string())).collect();
-                TypeInfo::Enumeration(vs)
-            },
-        ),
-        value(
-            TypeInfo::Oid,
-            context("oid decl", pair(tok(tag("OBJECT")), tok(tag("IDENTIFIER")))),
-        ),
-        map(
-            context(
-                "choice enum",
-                recognize(tuple((
-                    tok(tag("CHOICE")),
-                    ptok(tag("{")),
-                    many_till(tok(not_line_ending), ptok(tag("}"))),
-                ))),
-            ),
-            |t| TypeInfo::Uninterpreted(t.trim().to_string()),
-        ),
-        map(context("type decl", type_decl), |t| {
-            let unint = t.1.trim().to_string();
-            if t.0 {
-                TypeInfo::SequenceOfUninterpreted(unint)
-            } else {
-                TypeInfo::Uninterpreted(unint)
-            }
-        }),
-    ))
 }
 
 /// Parse a `TEXTUAL-CONVENTION` macro.

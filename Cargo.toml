@@ -8,5 +8,5 @@ edition = "2018"
 [dependencies]
 nom = "7.0"
 num = "0.4"
-radix_trie = "0.2"
+sequence_trie = "0.3"
 smallvec = "1.6"

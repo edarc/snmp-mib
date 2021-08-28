@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use radix_trie::{Trie, TrieCommon};
+use sequence_trie::SequenceTrie;
 
 use crate::loader::{Loader, QualifiedDecl};
 use crate::parser::{BuiltinType, PlainType, Type};
@@ -22,7 +22,7 @@ pub struct Entry {
 
 #[derive(Clone, Debug)]
 pub struct MIB {
-    by_oid: Trie<Vec<u32>, Entry>,
+    by_oid: SequenceTrie<u32, InternalEntry>,
     by_name: BTreeMap<Identifier, Vec<u32>>,
 }
 
@@ -33,21 +33,14 @@ impl MIB {
     /// largest prefix of the given OID. The fragment will contain any suffix for which the MIB
     /// does not define a name.
     pub fn translate_to_name(&self, oid: impl AsRef<[u32]>) -> OidExpr {
-        let oid = oid.as_ref().iter().cloned().collect::<Vec<_>>();
-        let lookup = || {
-            let subtree = self.by_oid.get_ancestor(&oid)?;
-            let parent = subtree.value()?.clone();
-            let prefix_len = subtree.key()?.len();
-            let suffix = &oid[prefix_len..];
-            Some(OidExpr {
-                parent: parent.id,
-                fragment: suffix.into(),
-            })
-        };
-        lookup().unwrap_or_else(|| OidExpr {
-            parent: Identifier::root(),
-            fragment: oid.into(),
-        })
+        // Decrement to skip the root.
+        let prefix_len = self.by_oid.prefix_iter(oid.as_ref()).count() - 1;
+        let (parent_oid, fragment) = oid.as_ref().split_at(prefix_len);
+        let parent = self.by_oid.get(parent_oid).unwrap();
+        OidExpr {
+            parent: parent.id.clone(),
+            fragment: fragment.into(),
+        }
     }
 
     pub fn lookup_oid(&self, name: impl IntoOidExpr) -> Option<Vec<u32>> {
@@ -66,7 +59,7 @@ impl From<Loader> for MIB {
     fn from(loader: Loader) -> Self {
         let linker = Linker::new(loader.0);
 
-        let mut by_oid = Trie::new();
+        let mut by_oid = SequenceTrie::new();
         let mut by_name = BTreeMap::new();
 
         for (id, oid) in linker.absolute_oids.iter() {

@@ -5,9 +5,11 @@ use lazy_static::lazy_static;
 use num::BigInt;
 use sequence_trie::SequenceTrie;
 
+#[allow(unused_imports)]
+use crate::dotted_oid;
 use crate::loader::{Loader, QualifiedDecl};
 use crate::parser::{BuiltinType, PlainType, Type};
-use crate::{dotted_oid, Identifier, IntoOidExpr, OidExpr};
+use crate::{Identifier, IntoOidExpr, OidExpr};
 
 lazy_static! {
     static ref SMI_WELL_KNOWN_TYPES: HashMap<&'static str, SMIWellKnown> = [
@@ -437,14 +439,7 @@ impl Linker {
     fn interpret_table(&self, id: &Identifier, entry_id: &Identifier) -> Option<SMITable> {
         let table_oid = self.absolute_oids.get(id)?;
         let table_subtrie = self.by_oid.get_node(table_oid)?;
-        let table_entry = table_subtrie.iter().nth(1)?;
-
-        let table_entry_oid = table_oid
-            .into_iter()
-            .copied()
-            .chain(table_entry.0.into_iter().copied())
-            .collect::<Vec<_>>();
-        let table_entry_id = table_entry.1;
+        let (_, table_entry_id) = table_subtrie.iter().nth(1)?;
 
         let table_fields = self.interpret_table_fields(&table_entry_id)?;
 

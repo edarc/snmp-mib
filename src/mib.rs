@@ -8,7 +8,7 @@ use sequence_trie::SequenceTrie;
 
 use crate::loader::{Loader, QualifiedDecl};
 use crate::parser::{BuiltinType, PlainType, Type};
-use crate::{Identifier, IntoOidExpr, NumericOid, OidExpr, ResolvedIdentifier};
+use crate::{Identifier, IntoOidExpr, NumericOid, OidExpr, IdentifiedObj};
 
 lazy_static! {
     static ref SMI_WELL_KNOWN_TYPES: HashMap<&'static str, SMIWellKnown> = [
@@ -91,15 +91,15 @@ pub enum SMIInterpretation {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SMITable {
-    table_id: ResolvedIdentifier,
-    entry_id: ResolvedIdentifier,
+    table_id: IdentifiedObj,
+    entry_id: IdentifiedObj,
     entry_type_id: Identifier,
-    field_interpretation: BTreeMap<ResolvedIdentifier, SMIInterpretation>,
+    field_interpretation: BTreeMap<IdentifiedObj, SMIInterpretation>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MIBObject {
-    pub id: ResolvedIdentifier,
+    pub id: IdentifiedObj,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
 }
@@ -136,7 +136,7 @@ impl MIB {
 
     pub fn get_object(&self, oid: impl AsRef<[u32]>) -> Option<MIBObject> {
         self.by_oid.get(oid.as_ref()).map(|ie| MIBObject {
-            id: ResolvedIdentifier::new(oid.as_ref().to_vec().into(), ie.id.clone()),
+            id: IdentifiedObj::new(oid.as_ref().to_vec().into(), ie.id.clone()),
             declared_type: ie.declared_type.clone(),
             smi_interpretation: ie.smi_interpretation.clone(),
         })
@@ -449,8 +449,8 @@ impl Linker {
         let table_fields = self.interpret_table_fields(&entry_id)?;
 
         Some(SMITable {
-            table_id: ResolvedIdentifier::new(table_oid.clone(), id.clone()),
-            entry_id: ResolvedIdentifier::new(entry_oid, entry_id.clone()),
+            table_id: IdentifiedObj::new(table_oid.clone(), id.clone()),
+            entry_id: IdentifiedObj::new(entry_oid, entry_id.clone()),
             entry_type_id: entry_type_id.clone(),
             field_interpretation: table_fields,
         })
@@ -459,7 +459,7 @@ impl Linker {
     fn interpret_table_fields(
         &self,
         entry_id: &Identifier,
-    ) -> Option<BTreeMap<ResolvedIdentifier, SMIInterpretation>> {
+    ) -> Option<BTreeMap<IdentifiedObj, SMIInterpretation>> {
         let table_entry_type = self.find_effective_type(self.type_defs.get(entry_id)?)?;
         let table_fields = self
             .match_sequence_type(&table_entry_type)?
@@ -474,7 +474,7 @@ impl Linker {
                 self.type_defs.get(&fid).and_then(|ty| {
                     let field_oid = self.absolute_oids.get(&fid)?;
                     let interp = self.interpret_type(&fid, &ty);
-                    Some((ResolvedIdentifier::new(field_oid.clone(), fid), interp))
+                    Some((IdentifiedObj::new(field_oid.clone(), fid), interp))
                 })
             })
             .collect::<BTreeMap<_, _>>();

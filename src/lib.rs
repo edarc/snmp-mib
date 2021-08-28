@@ -115,17 +115,17 @@ impl Debug for NumericOid {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct ResolvedIdentifier(NumericOid, Identifier);
+pub struct IdentifiedObj(NumericOid, Identifier);
 
-impl ResolvedIdentifier {
+impl IdentifiedObj {
     fn new(oid: NumericOid, id: Identifier) -> Self {
-        ResolvedIdentifier(oid, id)
+        IdentifiedObj(oid, id)
     }
 }
 
-impl Debug for ResolvedIdentifier {
+impl Debug for IdentifiedObj {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, r#"ResolvedIdentifier("{}" = {})"#, self.1, self.0)
+        write!(f, r#"IdentifiedObj("{}" = {})"#, self.1, self.0)
     }
 }
 

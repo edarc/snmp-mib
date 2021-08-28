@@ -98,7 +98,7 @@ pub struct SMITable {
 }
 
 #[derive(Clone, Debug)]
-pub struct MIBObject {
+pub struct MIBObjectDescriptor {
     pub id: IdentifiedObj,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
@@ -134,8 +134,8 @@ impl MIB {
         Some(oid.into())
     }
 
-    pub fn get_object(&self, oid: impl AsRef<[u32]>) -> Option<MIBObject> {
-        self.by_oid.get(oid.as_ref()).map(|ie| MIBObject {
+    pub fn describe_object(&self, oid: impl AsRef<[u32]>) -> Option<MIBObjectDescriptor> {
+        self.by_oid.get(oid.as_ref()).map(|ie| MIBObjectDescriptor {
             id: IdentifiedObj::new(oid.as_ref().to_vec().into(), ie.id.clone()),
             declared_type: ie.declared_type.clone(),
             smi_interpretation: ie.smi_interpretation.clone(),

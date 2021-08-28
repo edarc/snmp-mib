@@ -49,10 +49,10 @@ pub enum SMIWellKnown {
 pub enum SMIScalar {
     Bits(HashMap<BigInt, String>),
     Bytes,
-    Counter,
+    Counter(Option<String>),
     Enumeration(HashMap<BigInt, String>),
-    Gauge,
-    Integer,
+    Gauge(Option<String>),
+    Integer(Option<String>),
     IpAddress,
     ObjectIdentifier,
     Text,
@@ -64,18 +64,18 @@ impl From<SMIWellKnown> for SMIScalar {
         use SMIScalar as SS;
         use SMIWellKnown as SWK;
         match swk {
-            SWK::Bits => SS::Integer,
-            SWK::Counter => SS::Counter,
-            SWK::Counter32 => SS::Counter,
-            SWK::Counter64 => SS::Counter,
+            SWK::Bits => SS::Integer(None),
+            SWK::Counter => SS::Counter(None),
+            SWK::Counter32 => SS::Counter(None),
+            SWK::Counter64 => SS::Counter(None),
             SWK::DisplayString => SS::Text,
-            SWK::Gauge => SS::Gauge,
-            SWK::Gauge32 => SS::Gauge,
-            SWK::Integer32 => SS::Integer,
+            SWK::Gauge => SS::Gauge(None),
+            SWK::Gauge32 => SS::Gauge(None),
+            SWK::Integer32 => SS::Integer(None),
             SWK::IpAddress => SS::IpAddress,
             SWK::Opaque => SS::Bytes,
             SWK::TimeTicks => SS::TimeTicks,
-            SWK::Unsigned32 => SS::Integer,
+            SWK::Unsigned32 => SS::Integer(None),
         }
     }
 }
@@ -319,11 +319,26 @@ impl Linker {
     }
 
     fn interpret_type(&self, id: &Identifier, ty: &Type<Identifier>) -> SMIInterpretation {
+        use SMIInterpretation as SI;
+        use SMIScalar as SS;
+
         if let Some(cached_interpretation) = self.interpreted_type_cache.borrow().get(&id) {
             return cached_interpretation.clone();
         }
 
-        let interpretation = self.interpret_type_miss(id, ty);
+        let interpretation = match self.interpret_type_miss(id, ty) {
+            SI::Scalar(SS::Counter(units)) => {
+                SI::Scalar(SS::Counter(self.object_units.get(id).cloned().or(units)))
+            }
+            SI::Scalar(SS::Gauge(units)) => {
+                SI::Scalar(SS::Gauge(self.object_units.get(id).cloned().or(units)))
+            }
+            SI::Scalar(SS::Integer(units)) => {
+                SI::Scalar(SS::Integer(self.object_units.get(id).cloned().or(units)))
+            }
+            other => other,
+        };
+
         self.interpreted_type_cache
             .borrow_mut()
             .insert(id.clone(), interpretation.clone());
@@ -406,7 +421,7 @@ impl Linker {
             }
 
             // Other primitive built-ins (including INTEGER with no named values) are themselves.
-            PI::Builtin(BI::Integer(None)) => return SI::Scalar(SS::Integer),
+            PI::Builtin(BI::Integer(None)) => return SI::Scalar(SS::Integer(None)),
             PI::Builtin(BI::ObjectIdentifier) => return SI::Scalar(SS::ObjectIdentifier),
             PI::Builtin(BI::OctetString) => return SI::Scalar(SS::Bytes),
 

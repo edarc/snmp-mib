@@ -45,7 +45,7 @@ pub enum SMIWellKnown {
     Unsigned32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SMIScalar {
     Bits(HashMap<BigInt, String>),
     Bytes,
@@ -80,7 +80,7 @@ impl From<SMIWellKnown> for SMIScalar {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SMIInterpretation {
     Scalar(SMIScalar),
     Table(SMITable),
@@ -88,7 +88,7 @@ pub enum SMIInterpretation {
     Unknown,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SMITable {
     table_id: Identifier,
     entry_id: Identifier,

@@ -70,7 +70,7 @@ where
     // Real,
     // RelativeIRI,
     // RelativeOID,
-    Sequence(Vec<(String, Type<ID>)>),
+    Sequence(Vec<(ID, Type<ID>)>),
     SequenceOf(Box<Type<ID>>),
     // Set,
     // SetOf,

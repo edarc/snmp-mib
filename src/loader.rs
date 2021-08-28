@@ -69,7 +69,7 @@ impl Qualify for BuiltinType<String> {
             BI::OctetString => BI::OctetString,
             BI::Sequence(fs) => BI::Sequence(
                 fs.into_iter()
-                    .map(|(f, ty)| (f, ty.qualify(resolve)))
+                    .map(|(f, ty)| (resolve(f), ty.qualify(resolve)))
                     .collect(),
             ),
             BI::SequenceOf(t) => BI::SequenceOf(Box::new(t.qualify(resolve))),

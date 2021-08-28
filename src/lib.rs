@@ -15,7 +15,7 @@ pub fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
 }
 
 /// Module name, identifier
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Identifier(pub String, pub String);
 
 impl Identifier {
@@ -29,6 +29,13 @@ impl Identifier {
 
     pub fn is_root(&self) -> bool {
         self.0 == "" && self.1 == ""
+    }
+}
+
+// Manually derived to make {:#?} not uselessly linebreak these.
+impl std::fmt::Debug for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, r#"Identifier("{}", "{}")"#, self.0, self.1)
     }
 }
 

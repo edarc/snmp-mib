@@ -211,6 +211,9 @@ impl Linker {
                     new.type_defs.insert(id.clone(), ty);
                     u.map(|u| new.object_units.insert(id, u));
                 }
+                QualifiedDecl::TextualConvention(id, ty) => {
+                    new.type_defs.insert(id.clone(), ty);
+                }
                 _ => {}
             }
         }
@@ -444,9 +447,17 @@ impl Linker {
         let table_fields = self
             .match_sequence_type(&table_entry_type)?
             .into_iter()
-            .map(|(fid, fty)| {
-                let interp = self.interpret_type(&fid, &fty);
-                (fid, interp)
+            // Nearly always, each SEQUENCE field identifier is the same as some OBJECT-TYPE
+            // definition that has the "best" type information, so we look up that identifier in
+            // type_defs and interpret its type to get the field interpretation. If the SEQUENCE
+            // field identifier doesn't refer to anything in type_defs, it means it definitely
+            // won't be in absolute_oids, so it's probably useless anyway and should just get
+            // filtered out.
+            .filter_map(|(fid, _)| {
+                self.type_defs.get(&fid).map(|ty| {
+                    let interp = self.interpret_type(&fid, &ty);
+                    (fid, interp)
+                })
             })
             .collect::<BTreeMap<_, _>>();
 

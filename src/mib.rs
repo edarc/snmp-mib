@@ -97,7 +97,7 @@ pub struct SMITable {
 }
 
 #[derive(Clone, Debug)]
-pub struct Entry {
+pub struct MIBObject {
     pub id: Identifier,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
@@ -105,7 +105,7 @@ pub struct Entry {
 
 #[derive(Clone, Debug)]
 pub struct MIB {
-    by_oid: SequenceTrie<u32, InternalEntry>,
+    by_oid: SequenceTrie<u32, InternalObject>,
     by_name: BTreeMap<Identifier, Vec<u32>>,
 }
 
@@ -133,8 +133,8 @@ impl MIB {
         Some(oid)
     }
 
-    pub fn get_entry(&self, oid: impl AsRef<[u32]>) -> Option<Entry> {
-        self.by_oid.get(&oid.as_ref().to_vec()).map(|ie| Entry {
+    pub fn get_object(&self, oid: impl AsRef<[u32]>) -> Option<MIBObject> {
+        self.by_oid.get(&oid.as_ref().to_vec()).map(|ie| MIBObject {
             id: ie.id.clone(),
             declared_type: ie.declared_type.clone(),
             smi_interpretation: ie.smi_interpretation.clone(),
@@ -169,7 +169,7 @@ struct Linker {
 }
 
 #[derive(Clone, Debug)]
-struct InternalEntry {
+struct InternalObject {
     pub id: Identifier,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
@@ -305,10 +305,10 @@ impl Linker {
         Ok(linked_def.fragment.to_vec())
     }
 
-    pub fn make_entry(&self, id: &Identifier) -> InternalEntry {
+    pub fn make_entry(&self, id: &Identifier) -> InternalObject {
         let decl_type = self.type_defs.get(&id);
 
-        InternalEntry {
+        InternalObject {
             id: id.clone(),
             declared_type: decl_type.cloned(),
             smi_interpretation: decl_type

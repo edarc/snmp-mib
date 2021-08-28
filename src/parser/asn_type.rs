@@ -85,13 +85,25 @@ pub struct Constraint {
     value: Option<Vec<ConstraintRange>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum ConstraintRange {
     Full,
     LessEq(BigInt),
     GreaterEq(BigInt),
     Closed(BigInt, BigInt),
     Point(BigInt),
+}
+
+impl std::fmt::Debug for ConstraintRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            ConstraintRange::Full => write!(f, "MIN..MAX"),
+            ConstraintRange::LessEq(u) => write!(f, "MIN..{}", u),
+            ConstraintRange::GreaterEq(l) => write!(f, "{}..MAX", l),
+            ConstraintRange::Closed(l, u) => write!(f, "{}..{}", l, u),
+            ConstraintRange::Point(p) => write!(f, "{}", p),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -1,15 +1,14 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Debug;
 
 use lazy_static::lazy_static;
 use num::BigInt;
 use sequence_trie::SequenceTrie;
 
-#[allow(unused_imports)]
-use crate::dotted_oid;
 use crate::loader::{Loader, QualifiedDecl};
 use crate::parser::{BuiltinType, PlainType, Type};
-use crate::{Identifier, IntoOidExpr, OidExpr};
+use crate::{Identifier, IntoOidExpr, NumericOid, OidExpr, ResolvedIdentifier};
 
 lazy_static! {
     static ref SMI_WELL_KNOWN_TYPES: HashMap<&'static str, SMIWellKnown> = [
@@ -92,15 +91,15 @@ pub enum SMIInterpretation {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SMITable {
-    table_id: Identifier,
-    entry_id: Identifier,
+    table_id: ResolvedIdentifier,
+    entry_id: ResolvedIdentifier,
     entry_type_id: Identifier,
-    field_interpretation: BTreeMap<Identifier, SMIInterpretation>,
+    field_interpretation: BTreeMap<ResolvedIdentifier, SMIInterpretation>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MIBObject {
-    pub id: Identifier,
+    pub id: ResolvedIdentifier,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
 }
@@ -108,7 +107,7 @@ pub struct MIBObject {
 #[derive(Clone, Debug)]
 pub struct MIB {
     by_oid: SequenceTrie<u32, InternalObject>,
-    by_name: BTreeMap<Identifier, Vec<u32>>,
+    by_name: BTreeMap<Identifier, NumericOid>,
 }
 
 impl MIB {
@@ -128,16 +127,16 @@ impl MIB {
         }
     }
 
-    pub fn lookup_oid(&self, name: impl IntoOidExpr) -> Option<Vec<u32>> {
+    pub fn lookup_oid(&self, name: impl IntoOidExpr) -> Option<NumericOid> {
         let oe = name.into_oid_expr()?;
-        let mut oid = self.by_name.get(&oe.parent)?.clone();
+        let mut oid = self.by_name.get(&oe.parent)?.to_vec();
         oid.extend(oe.fragment);
-        Some(oid)
+        Some(oid.into())
     }
 
     pub fn get_object(&self, oid: impl AsRef<[u32]>) -> Option<MIBObject> {
-        self.by_oid.get(&oid.as_ref().to_vec()).map(|ie| MIBObject {
-            id: ie.id.clone(),
+        self.by_oid.get(oid.as_ref()).map(|ie| MIBObject {
+            id: ResolvedIdentifier::new(oid.as_ref().to_vec().into(), ie.id.clone()),
             declared_type: ie.declared_type.clone(),
             smi_interpretation: ie.smi_interpretation.clone(),
         })
@@ -164,7 +163,7 @@ struct Linker {
     pub type_defs: BTreeMap<Identifier, Type<Identifier>>,
     pub object_units: BTreeMap<Identifier, String>,
     pub relative_oid_defs: BTreeMap<Identifier, OidExpr>,
-    pub absolute_oids: BTreeMap<Identifier, Vec<u32>>,
+    pub absolute_oids: BTreeMap<Identifier, NumericOid>,
     pub by_oid: SequenceTrie<u32, Identifier>,
     pub orphan_identifiers: BTreeSet<Identifier>,
     interpreted_type_cache: RefCell<BTreeMap<Identifier, SMIInterpretation>>,
@@ -271,8 +270,8 @@ impl Linker {
         id: &Identifier,
         def: &OidExpr,
         rel: &BTreeMap<Identifier, OidExpr>,
-        abs: &mut BTreeMap<Identifier, Vec<u32>>,
-    ) -> Result<Vec<u32>, Identifier> {
+        abs: &mut BTreeMap<Identifier, NumericOid>,
+    ) -> Result<NumericOid, Identifier> {
         let linked_def = if def.parent.is_root() {
             // The parent is root, so this def is linked already.
             def.clone()
@@ -290,7 +289,7 @@ impl Linker {
         } else if let Some(parent_def) = rel.get(&def.parent) {
             // Parent is not linked. Recursively link it first.
             let mut linked_parent_fragment =
-                Self::link_oidexpr_to_absolute_oid(&def.parent, parent_def, rel, abs)?;
+                Self::link_oidexpr_to_absolute_oid(&def.parent, parent_def, rel, abs)?.to_vec();
             linked_parent_fragment.extend(def.fragment.iter().cloned());
             OidExpr {
                 parent: Identifier::root(),
@@ -303,8 +302,8 @@ impl Linker {
             return Err(def.parent.clone());
         };
 
-        abs.insert(id.clone(), linked_def.fragment.to_vec());
-        Ok(linked_def.fragment.to_vec())
+        abs.insert(id.clone(), linked_def.fragment.to_vec().into());
+        Ok(linked_def.fragment.to_vec().into())
     }
 
     pub fn make_entry(&self, id: &Identifier) -> InternalObject {
@@ -436,17 +435,23 @@ impl Linker {
         SI::Unknown
     }
 
-    fn interpret_table(&self, id: &Identifier, entry_id: &Identifier) -> Option<SMITable> {
+    fn interpret_table(&self, id: &Identifier, entry_type_id: &Identifier) -> Option<SMITable> {
         let table_oid = self.absolute_oids.get(id)?;
         let table_subtrie = self.by_oid.get_node(table_oid)?;
-        let (_, table_entry_id) = table_subtrie.iter().nth(1)?;
+        let (fragment, entry_id) = table_subtrie.iter().nth(1)?;
+        let entry_oid = table_oid
+            .iter()
+            .chain(fragment)
+            .copied()
+            .collect::<Vec<_>>()
+            .into();
 
-        let table_fields = self.interpret_table_fields(&table_entry_id)?;
+        let table_fields = self.interpret_table_fields(&entry_id)?;
 
         Some(SMITable {
-            table_id: id.clone(),
-            entry_id: table_entry_id.clone(),
-            entry_type_id: entry_id.clone(),
+            table_id: ResolvedIdentifier::new(table_oid.clone(), id.clone()),
+            entry_id: ResolvedIdentifier::new(entry_oid, entry_id.clone()),
+            entry_type_id: entry_type_id.clone(),
             field_interpretation: table_fields,
         })
     }
@@ -454,7 +459,7 @@ impl Linker {
     fn interpret_table_fields(
         &self,
         entry_id: &Identifier,
-    ) -> Option<BTreeMap<Identifier, SMIInterpretation>> {
+    ) -> Option<BTreeMap<ResolvedIdentifier, SMIInterpretation>> {
         let table_entry_type = self.find_effective_type(self.type_defs.get(entry_id)?)?;
         let table_fields = self
             .match_sequence_type(&table_entry_type)?
@@ -466,9 +471,10 @@ impl Linker {
             // won't be in absolute_oids, so it's probably useless anyway and should just get
             // filtered out.
             .filter_map(|(fid, _)| {
-                self.type_defs.get(&fid).map(|ty| {
+                self.type_defs.get(&fid).and_then(|ty| {
+                    let field_oid = self.absolute_oids.get(&fid)?;
                     let interp = self.interpret_type(&fid, &ty);
-                    (fid, interp)
+                    Some((ResolvedIdentifier::new(field_oid.clone(), fid), interp))
                 })
             })
             .collect::<BTreeMap<_, _>>();

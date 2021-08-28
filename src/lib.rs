@@ -3,16 +3,10 @@ pub mod mib;
 mod parser;
 
 use smallvec::SmallVec;
+use std::fmt::{Debug, Display};
+use std::ops::Deref;
 
 pub use crate::parser::Type;
-
-pub fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
-    oid.as_ref()
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(".")
-}
 
 /// Module name, identifier
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -32,10 +26,9 @@ impl Identifier {
     }
 }
 
-// Manually derived to make {:#?} not uselessly linebreak these.
 impl std::fmt::Debug for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, r#"Identifier("{}", "{}")"#, self.0, self.1)
+        write!(f, r#"Identifier("{}")"#, self)
     }
 }
 
@@ -62,6 +55,77 @@ impl IntoIdentifier for &str {
         let rest = split.pop().unwrap();
         let first = split.pop().unwrap_or("");
         (first, rest).into_identifier()
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct NumericOid(Vec<u32>);
+
+impl NumericOid {
+    pub fn new(path: impl AsRef<[u32]>) -> Self {
+        NumericOid(path.as_ref().to_vec())
+    }
+}
+
+impl Deref for NumericOid {
+    type Target = [u32];
+    fn deref(&self) -> &[u32] {
+        &self.0
+    }
+}
+
+impl AsRef<[u32]> for NumericOid {
+    fn as_ref(&self) -> &[u32] {
+        &self.0
+    }
+}
+
+impl IntoIterator for NumericOid {
+    type Item = u32;
+    type IntoIter = <Vec<u32> as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a NumericOid {
+    type Item = &'a u32;
+    type IntoIter = std::slice::Iter<'a, u32>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl From<Vec<u32>> for NumericOid {
+    fn from(v: Vec<u32>) -> Self {
+        NumericOid(v)
+    }
+}
+
+impl Display for NumericOid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", dotted_oid(self))
+    }
+}
+
+impl Debug for NumericOid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, r"NumericOid({})", self)
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct ResolvedIdentifier(NumericOid, Identifier);
+
+impl ResolvedIdentifier {
+    fn new(oid: NumericOid, id: Identifier) -> Self {
+        ResolvedIdentifier(oid, id)
+    }
+}
+
+impl Debug for ResolvedIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, r#"ResolvedIdentifier("{}" = {})"#, self.1, self.0)
     }
 }
 
@@ -122,4 +186,12 @@ impl IntoOidExpr for &str {
             None
         }
     }
+}
+
+fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
+    oid.as_ref()
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(".")
 }

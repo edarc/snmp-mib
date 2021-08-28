@@ -90,6 +90,7 @@ pub enum SMIInterpretation {
 
 #[derive(Debug, Clone)]
 pub struct SMITable {
+    table_id: Identifier,
     entry_id: Identifier,
     entry_type_id: Identifier,
     field_interpretation: BTreeMap<Identifier, SMIInterpretation>,
@@ -433,6 +434,7 @@ impl Linker {
         let table_fields = self.interpret_table_fields(&table_entry_id)?;
 
         Some(SMITable {
+            table_id: id.clone(),
             entry_id: table_entry_id.clone(),
             entry_type_id: entry_id.clone(),
             field_interpretation: table_fields,

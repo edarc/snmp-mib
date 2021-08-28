@@ -47,7 +47,7 @@ impl Qualify for PlainType<String> {
     fn qualify(self, resolve: &dyn Fn(String) -> Identifier) -> Self::Output {
         match self {
             PlainType::Builtin(bi) => PlainType::Builtin(bi.qualify(resolve)),
-            PlainType::Referenced(i, nvs) => PlainType::Referenced(resolve(i), nvs),
+            PlainType::Referenced(n, nvs) => PlainType::Referenced(resolve(n), nvs),
         }
     }
 }
@@ -85,32 +85,32 @@ impl QualifiedDecl {
         use QualifiedDecl as QD;
         let resolve = &resolve;
         match md {
-            MD::AgentCapabilities(i, rd) => QD::AgentCapabilities(resolve(i), rd.qualify(resolve)),
-            MD::MacroDef(i) => QD::MacroDef(resolve(i)),
-            MD::ModuleCompliance(i, rd) => QD::ModuleCompliance(resolve(i), rd.qualify(resolve)),
-            MD::ModuleIdentity(i, rd) => QD::ModuleIdentity(resolve(i), rd.qualify(resolve)),
-            MD::NotificationGroup(i, rd, mi) => QD::NotificationGroup(
-                resolve(i),
+            MD::AgentCapabilities(n, rd) => QD::AgentCapabilities(resolve(n), rd.qualify(resolve)),
+            MD::MacroDef(n) => QD::MacroDef(resolve(n)),
+            MD::ModuleCompliance(n, rd) => QD::ModuleCompliance(resolve(n), rd.qualify(resolve)),
+            MD::ModuleIdentity(n, rd) => QD::ModuleIdentity(resolve(n), rd.qualify(resolve)),
+            MD::NotificationGroup(n, rd, mi) => QD::NotificationGroup(
+                resolve(n),
                 rd.qualify(resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
-            MD::NotificationType(i, rd, mi) => QD::NotificationType(
-                resolve(i),
+            MD::NotificationType(n, rd, mi) => QD::NotificationType(
+                resolve(n),
                 rd.qualify(resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
-            MD::ObjectGroup(i, rd, mi) => QD::ObjectGroup(
-                resolve(i),
+            MD::ObjectGroup(n, rd, mi) => QD::ObjectGroup(
+                resolve(n),
                 rd.qualify(resolve),
                 mi.into_iter().map(resolve).collect(),
             ),
-            MD::ObjectIdentity(i, rd) => QD::ObjectIdentity(resolve(i), rd.qualify(resolve)),
-            MD::ObjectType(i, rd, ti, u) => {
-                QD::ObjectType(resolve(i), rd.qualify(resolve), ti.qualify(resolve), u)
+            MD::ObjectIdentity(n, rd) => QD::ObjectIdentity(resolve(n), rd.qualify(resolve)),
+            MD::ObjectType(n, rd, ti, u) => {
+                QD::ObjectType(resolve(n), rd.qualify(resolve), ti.qualify(resolve), u)
             }
-            MD::PlainOidDef(i, rd) => QD::PlainOidDef(resolve(i), rd.qualify(resolve)),
-            MD::PlainTypeDef(i, ti) => QD::PlainTypeDef(resolve(i), ti.qualify(resolve)),
-            MD::TextualConvention(i, ti) => QD::TextualConvention(resolve(i), ti.qualify(resolve)),
+            MD::PlainOidDef(n, rd) => QD::PlainOidDef(resolve(n), rd.qualify(resolve)),
+            MD::PlainTypeDef(n, ti) => QD::PlainTypeDef(resolve(n), ti.qualify(resolve)),
+            MD::TextualConvention(n, ti) => QD::TextualConvention(resolve(n), ti.qualify(resolve)),
             MD::Imports(_) | MD::Irrelevant => QD::Irrelevant,
         }
     }
@@ -119,15 +119,15 @@ impl QualifiedDecl {
     pub(crate) fn oid_definition(&self) -> Option<(Identifier, OidExpr)> {
         use QualifiedDecl as QD;
         match self {
-            QD::AgentCapabilities(i, rd) => Some((i.clone(), rd.clone())),
-            QD::ModuleCompliance(i, rd) => Some((i.clone(), rd.clone())),
-            QD::ModuleIdentity(i, rd) => Some((i.clone(), rd.clone())),
-            QD::NotificationGroup(i, rd, _) => Some((i.clone(), rd.clone())),
-            QD::NotificationType(i, rd, _) => Some((i.clone(), rd.clone())),
-            QD::ObjectGroup(i, rd, _) => Some((i.clone(), rd.clone())),
-            QD::ObjectIdentity(i, rd) => Some((i.clone(), rd.clone())),
-            QD::ObjectType(i, rd, ..) => Some((i.clone(), rd.clone())),
-            QD::PlainOidDef(i, rd) => Some((i.clone(), rd.clone())),
+            QD::AgentCapabilities(n, rd) => Some((n.clone(), rd.clone())),
+            QD::ModuleCompliance(n, rd) => Some((n.clone(), rd.clone())),
+            QD::ModuleIdentity(n, rd) => Some((n.clone(), rd.clone())),
+            QD::NotificationGroup(n, rd, _) => Some((n.clone(), rd.clone())),
+            QD::NotificationType(n, rd, _) => Some((n.clone(), rd.clone())),
+            QD::ObjectGroup(n, rd, _) => Some((n.clone(), rd.clone())),
+            QD::ObjectIdentity(n, rd) => Some((n.clone(), rd.clone())),
+            QD::ObjectType(n, rd, ..) => Some((n.clone(), rd.clone())),
+            QD::PlainOidDef(n, rd) => Some((n.clone(), rd.clone())),
             QD::MacroDef(_) | QD::PlainTypeDef(..) | QD::TextualConvention(..) | QD::Irrelevant => {
                 None
             }
@@ -158,8 +158,8 @@ impl Loader {
         let import_idxs = decls
             .iter()
             .enumerate()
-            .filter(|(_, d)| d.is_imports())
-            .map(|(i, _)| i)
+            .filter(|(_, decl)| decl.is_imports())
+            .map(|(name, _)| name)
             .collect::<Vec<_>>();
 
         // Pop each index we found above, in reverse order because index invalidation, and flat-map
@@ -167,12 +167,20 @@ impl Loader {
         let imports = import_idxs
             .into_iter()
             .rev()
-            .map(|i| decls.remove(i))
-            .flat_map(|d| match d {
-                ModuleDecl::Imports(h) => h,
+            .map(|idx| decls.remove(idx))
+            .flat_map(|decl| match decl {
+                ModuleDecl::Imports(map) => map,
                 _ => HashMap::new(),
             })
-            .map(|(n, m)| (n, module_name_fixups.get(&m).unwrap_or(&m).to_string()))
+            .map(|(name, source_module)| {
+                (
+                    name,
+                    module_name_fixups
+                        .get(&source_module)
+                        .unwrap_or(&source_module)
+                        .to_string(),
+                )
+            })
             .collect::<HashMap<_, _>>();
 
         // Generate a closure over the imports for this module that resolves a String containing an
@@ -180,14 +188,14 @@ impl Loader {
         let resolve = {
             let imports = &imports;
             let this_module = &this_module;
-            move |id: String| {
-                let module_name = if id == "" || id == "iso" {
+            move |name: String| {
+                let module_name = if name == "" || name == "iso" {
                     ""
                 } else {
-                    imports.get(&id).unwrap_or(this_module)
+                    imports.get(&name).unwrap_or(this_module)
                 }
                 .to_string();
-                Identifier(module_name, id)
+                Identifier(module_name, name)
             }
         };
 

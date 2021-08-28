@@ -118,8 +118,8 @@ impl Debug for NumericOid {
 pub struct IdentifiedObj(NumericOid, Identifier);
 
 impl IdentifiedObj {
-    fn new(oid: NumericOid, id: Identifier) -> Self {
-        IdentifiedObj(oid, id)
+    fn new(numeric_oid: NumericOid, name: Identifier) -> Self {
+        IdentifiedObj(numeric_oid, name)
     }
 }
 
@@ -188,8 +188,9 @@ impl IntoOidExpr for &str {
     }
 }
 
-fn dotted_oid(oid: impl AsRef<[u32]>) -> String {
-    oid.as_ref()
+fn dotted_oid(numeric_oid: impl AsRef<[u32]>) -> String {
+    numeric_oid
+        .as_ref()
         .iter()
         .map(ToString::to_string)
         .collect::<Vec<_>>()

@@ -8,7 +8,7 @@ use sequence_trie::SequenceTrie;
 
 use crate::loader::{Loader, QualifiedDecl};
 use crate::parser::{BuiltinType, PlainType, Type};
-use crate::{Identifier, IntoOidExpr, NumericOid, OidExpr, IdentifiedObj};
+use crate::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
 
 lazy_static! {
     static ref SMI_WELL_KNOWN_TYPES: HashMap<&'static str, SMIWellKnown> = [
@@ -91,22 +91,22 @@ pub enum SMIInterpretation {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SMITable {
-    table_id: IdentifiedObj,
-    entry_id: IdentifiedObj,
-    entry_type_id: Identifier,
+    table_object: IdentifiedObj,
+    entry_object: IdentifiedObj,
+    entry_type_name: Identifier,
     field_interpretation: BTreeMap<IdentifiedObj, SMIInterpretation>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MIBObjectDescriptor {
-    pub id: IdentifiedObj,
+    pub object: IdentifiedObj,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
 }
 
 #[derive(Clone, Debug)]
 pub struct MIB {
-    by_oid: SequenceTrie<u32, InternalObject>,
+    numeric_oid_names: SequenceTrie<u32, InternalObject>,
     by_name: BTreeMap<Identifier, NumericOid>,
 }
 
@@ -118,11 +118,11 @@ impl MIB {
     /// does not define a name.
     pub fn translate_to_name(&self, oid: impl AsRef<[u32]>) -> OidExpr {
         // Decrement to skip the root.
-        let prefix_len = self.by_oid.prefix_iter(oid.as_ref()).count() - 1;
+        let prefix_len = self.numeric_oid_names.prefix_iter(oid.as_ref()).count() - 1;
         let (parent_oid, fragment) = oid.as_ref().split_at(prefix_len);
-        let parent = self.by_oid.get(parent_oid).unwrap();
+        let parent = self.numeric_oid_names.get(parent_oid).unwrap();
         OidExpr {
-            parent: parent.id.clone(),
+            parent: parent.name.clone(),
             fragment: fragment.into(),
         }
     }
@@ -135,11 +135,13 @@ impl MIB {
     }
 
     pub fn describe_object(&self, oid: impl AsRef<[u32]>) -> Option<MIBObjectDescriptor> {
-        self.by_oid.get(oid.as_ref()).map(|ie| MIBObjectDescriptor {
-            id: IdentifiedObj::new(oid.as_ref().to_vec().into(), ie.id.clone()),
-            declared_type: ie.declared_type.clone(),
-            smi_interpretation: ie.smi_interpretation.clone(),
-        })
+        self.numeric_oid_names
+            .get(oid.as_ref())
+            .map(|ie| MIBObjectDescriptor {
+                object: IdentifiedObj::new(oid.as_ref().to_vec().into(), ie.name.clone()),
+                declared_type: ie.declared_type.clone(),
+                smi_interpretation: ie.smi_interpretation.clone(),
+            })
     }
 }
 
@@ -147,31 +149,34 @@ impl From<Loader> for MIB {
     fn from(loader: Loader) -> Self {
         let linker = Linker::new(loader.0);
 
-        let mut by_oid = SequenceTrie::new();
+        let mut numeric_oid_names = SequenceTrie::new();
         let mut by_name = BTreeMap::new();
 
-        for (id, oid) in linker.absolute_oids.iter() {
-            by_oid.insert(oid, linker.make_entry(&id));
-            by_name.insert(id.clone(), oid.clone());
+        for (name, oid) in linker.object_numeric_oids.iter() {
+            numeric_oid_names.insert(oid, linker.make_entry(&name));
+            by_name.insert(name.clone(), oid.clone());
         }
 
-        Self { by_oid, by_name }
+        Self {
+            numeric_oid_names,
+            by_name,
+        }
     }
 }
 
 struct Linker {
     pub type_defs: BTreeMap<Identifier, Type<Identifier>>,
-    pub object_units: BTreeMap<Identifier, String>,
-    pub relative_oid_defs: BTreeMap<Identifier, OidExpr>,
-    pub absolute_oids: BTreeMap<Identifier, NumericOid>,
-    pub by_oid: SequenceTrie<u32, Identifier>,
+    pub object_uoms: BTreeMap<Identifier, String>,
+    pub object_oidexpr_defs: BTreeMap<Identifier, OidExpr>,
+    pub object_numeric_oids: BTreeMap<Identifier, NumericOid>,
+    pub numeric_oid_names: SequenceTrie<u32, Identifier>,
     pub orphan_identifiers: BTreeSet<Identifier>,
-    interpreted_type_cache: RefCell<BTreeMap<Identifier, SMIInterpretation>>,
+    type_interpretation_cache: RefCell<BTreeMap<Identifier, SMIInterpretation>>,
 }
 
 #[derive(Clone, Debug)]
 struct InternalObject {
-    pub id: Identifier,
+    pub name: Identifier,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
 }
@@ -180,11 +185,11 @@ impl Linker {
     fn new_empty() -> Self {
         Self {
             type_defs: BTreeMap::new(),
-            object_units: BTreeMap::new(),
-            absolute_oids: BTreeMap::new(),
-            by_oid: SequenceTrie::new(),
+            object_uoms: BTreeMap::new(),
+            object_numeric_oids: BTreeMap::new(),
+            numeric_oid_names: SequenceTrie::new(),
             orphan_identifiers: BTreeSet::new(),
-            relative_oid_defs: Some((
+            object_oidexpr_defs: Some((
                 Identifier::new("", "iso"),
                 OidExpr {
                     parent: Identifier::root(),
@@ -193,7 +198,7 @@ impl Linker {
             ))
             .into_iter()
             .collect(),
-            interpreted_type_cache: RefCell::new(BTreeMap::new()),
+            type_interpretation_cache: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -201,34 +206,34 @@ impl Linker {
         let mut new = Self::new_empty();
 
         for decl in decls {
-            if let Some((id, oidexpr)) = decl.oid_definition() {
-                new.relative_oid_defs.insert(id, oidexpr);
+            if let Some((name, oidexpr)) = decl.oid_definition() {
+                new.object_oidexpr_defs.insert(name, oidexpr);
             }
 
             match decl {
-                QualifiedDecl::PlainTypeDef(id, ty) => {
-                    new.type_defs.insert(id, ty);
+                QualifiedDecl::PlainTypeDef(name, ty) => {
+                    new.type_defs.insert(name, ty);
                 }
-                QualifiedDecl::ObjectType(id, _, ty, u) => {
-                    new.type_defs.insert(id.clone(), ty);
-                    u.map(|u| new.object_units.insert(id, u));
+                QualifiedDecl::ObjectType(name, _, ty, uom) => {
+                    new.type_defs.insert(name.clone(), ty);
+                    uom.map(|uom| new.object_uoms.insert(name, uom));
                 }
-                QualifiedDecl::TextualConvention(id, ty) => {
-                    new.type_defs.insert(id.clone(), ty);
+                QualifiedDecl::TextualConvention(name, ty) => {
+                    new.type_defs.insert(name.clone(), ty);
                 }
                 _ => {}
             }
         }
 
-        for (id, oidexpr) in new.relative_oid_defs.iter() {
-            match Self::link_oidexpr_to_absolute_oid(
-                id,
+        for (name, oidexpr) in new.object_oidexpr_defs.iter() {
+            match Self::link_oidexpr_to_numeric_oid(
+                name,
                 oidexpr,
-                &new.relative_oid_defs,
-                &mut new.absolute_oids,
+                &new.object_oidexpr_defs,
+                &mut new.object_numeric_oids,
             ) {
                 Ok(oid) => {
-                    new.by_oid.insert(&oid, id.clone());
+                    new.numeric_oid_names.insert(&oid, name.clone());
                 }
                 Err(orphan) => {
                     new.orphan_identifiers.insert(orphan);
@@ -239,18 +244,18 @@ impl Linker {
         new
     }
 
-    /// Link an Identifier-to-OidExpr binding with parent bindings to get an absolute OID.
+    /// Link an Identifier-to-OidExpr binding with parent bindings to get a numeric OID.
     ///
-    /// Given a map of relative bindings `rel` like
+    /// Given a map of relative OidExpr bindings `rel` like
     ///
     ///   N::A ::= { N::B 1 }
     ///   N::B ::= { iso 42 }
     ///
-    /// and a map of absolute bindings `abs`, like
+    /// and a map of absolute numeric OID bindings `abs`, like
     ///
     ///   iso ::= { 1 }
     ///
-    /// then a call to this function with `id` = N::A and `def` = { N::B 1 } that returns `Ok(v)`
+    /// then a call to this function with `name` = N::A and `def` = { N::B 1 } that returns `Ok(v)`
     /// will, as postconditions:
     ///
     /// - Ensure `abs` contains a N::A ::= { 1 42 1 }
@@ -263,11 +268,11 @@ impl Linker {
     /// and recur. The base cases are one of:
     ///
     /// - The parent of `def` is the root already;
-    /// - `id` exists in `abs` already;
+    /// - `name` exists in `abs` already;
     /// - The parent of `def` is neither in `abs` nor in `rel`, meaning there is no path to the
     ///   root possible (this is an error).
-    fn link_oidexpr_to_absolute_oid(
-        id: &Identifier,
+    fn link_oidexpr_to_numeric_oid(
+        name: &Identifier,
         def: &OidExpr,
         rel: &BTreeMap<Identifier, OidExpr>,
         abs: &mut BTreeMap<Identifier, NumericOid>,
@@ -289,7 +294,7 @@ impl Linker {
         } else if let Some(parent_def) = rel.get(&def.parent) {
             // Parent is not linked. Recursively link it first.
             let mut linked_parent_fragment =
-                Self::link_oidexpr_to_absolute_oid(&def.parent, parent_def, rel, abs)?.to_vec();
+                Self::link_oidexpr_to_numeric_oid(&def.parent, parent_def, rel, abs)?.to_vec();
             linked_parent_fragment.extend(def.fragment.iter().cloned());
             OidExpr {
                 parent: Identifier::root(),
@@ -302,64 +307,68 @@ impl Linker {
             return Err(def.parent.clone());
         };
 
-        abs.insert(id.clone(), linked_def.fragment.to_vec().into());
+        abs.insert(name.clone(), linked_def.fragment.to_vec().into());
         Ok(linked_def.fragment.to_vec().into())
     }
 
-    pub fn make_entry(&self, id: &Identifier) -> InternalObject {
-        let decl_type = self.type_defs.get(&id);
+    pub fn make_entry(&self, name: &Identifier) -> InternalObject {
+        let decl_type = self.type_defs.get(&name);
 
         InternalObject {
-            id: id.clone(),
+            name: name.clone(),
             declared_type: decl_type.cloned(),
             smi_interpretation: decl_type
                 .as_ref()
-                .map(|dt| self.interpret_type(id, dt))
+                .map(|dt| self.interpret_type(name, dt))
                 .unwrap_or(SMIInterpretation::Unknown),
         }
     }
 
-    fn interpret_type(&self, id: &Identifier, ty: &Type<Identifier>) -> SMIInterpretation {
+    fn interpret_type(&self, name: &Identifier, ty: &Type<Identifier>) -> SMIInterpretation {
         use SMIInterpretation as SI;
         use SMIScalar as SS;
 
-        if let Some(cached_interpretation) = self.interpreted_type_cache.borrow().get(&id) {
+        if let Some(cached_interpretation) = self.type_interpretation_cache.borrow().get(&name) {
             return cached_interpretation.clone();
         }
 
-        let interpretation = match self.interpret_type_miss(id, ty) {
-            SI::Scalar(SS::Counter(units)) => {
-                SI::Scalar(SS::Counter(self.object_units.get(id).cloned().or(units)))
+        let interpretation = match self.interpret_type_miss(name, ty) {
+            SI::Scalar(SS::Counter(uom)) => {
+                SI::Scalar(SS::Counter(self.object_uoms.get(name).cloned().or(uom)))
             }
-            SI::Scalar(SS::Gauge(units)) => {
-                SI::Scalar(SS::Gauge(self.object_units.get(id).cloned().or(units)))
+            SI::Scalar(SS::Gauge(uom)) => {
+                SI::Scalar(SS::Gauge(self.object_uoms.get(name).cloned().or(uom)))
             }
-            SI::Scalar(SS::Integer(units)) => {
-                SI::Scalar(SS::Integer(self.object_units.get(id).cloned().or(units)))
+            SI::Scalar(SS::Integer(uom)) => {
+                SI::Scalar(SS::Integer(self.object_uoms.get(name).cloned().or(uom)))
             }
             other => other,
         };
 
-        self.interpreted_type_cache
+        self.type_interpretation_cache
             .borrow_mut()
-            .insert(id.clone(), interpretation.clone());
+            .insert(name.clone(), interpretation.clone());
         interpretation
     }
 
-    fn interpret_type_miss(&self, id: &Identifier, ty: &Type<Identifier>) -> SMIInterpretation {
+    fn interpret_type_miss(
+        &self,
+        name: &Identifier,
+        decl_type: &Type<Identifier>,
+    ) -> SMIInterpretation {
         use BuiltinType as BI;
         use PlainType as PI;
         use SMIInterpretation as SI;
         use SMIScalar as SS;
         use SMIWellKnown as SWK;
 
-        match &ty.ty {
+        match &decl_type.ty {
             PI::Builtin(BI::SequenceOf(elem_type)) => match &elem_type.ty {
-                PI::Referenced(ref_id, _) => {
+                PI::Referenced(referent_name, _) => {
                     if self.match_sequence_type(&elem_type).is_some() {
                         // A SEQUENCE OF some referenced type which is effectively a SEQUENCE is an
                         // SNMP table.
-                        if let Some(smi_table) = self.interpret_table(id, ref_id) {
+                        if let Some(smi_table) = self.interpret_table(name, referent_name) {
                             return SI::Table(smi_table);
                         }
                     }
@@ -367,12 +376,15 @@ impl Linker {
                 _ => {}
             },
 
-            PI::Referenced(ref_id, nvs) => match SMI_WELL_KNOWN_TYPES.get(ref_id.1.as_str()) {
+            PI::Referenced(referent_name, named_vals) => match SMI_WELL_KNOWN_TYPES
+                .get(referent_name.1.as_str())
+            {
                 // Referenced types which are well-known Integer32 or BITS types that have named
                 // values are enumerations.
-                Some(SWK::Integer32) | Some(SWK::Bits) if nvs.is_some() => {
+                Some(SWK::Integer32) | Some(SWK::Bits) if named_vals.is_some() => {
                     return SI::Scalar(SS::Enumeration(
-                        nvs.as_ref()
+                        named_vals
+                            .as_ref()
                             .unwrap()
                             .iter()
                             .map(|(n, v)| (v.clone(), n.clone()))
@@ -383,7 +395,7 @@ impl Linker {
                 // Referenced types that are any other well-known type are scalars.
                 Some(other_wkt) => return SI::Scalar((*other_wkt).into()),
 
-                None => match &self.find_effective_type(&ty) {
+                None => match &self.find_effective_type(&decl_type) {
                     // Referenced types that are effectively a SEQUENCE are table rows. This is
                     // handled here instead of in the penultimate clause because effective type
                     // will be a plain type def and won't have an OID we can use to find the parent
@@ -392,7 +404,7 @@ impl Linker {
                         ty: PI::Builtin(BI::Sequence(_)),
                         ..
                     }) => {
-                        if let Some(smi_table) = self.interpret_table_entry(&id, ref_id) {
+                        if let Some(smi_table) = self.interpret_table_entry(&name, referent_name) {
                             return SI::TableRow(smi_table);
                         }
                     }
@@ -401,13 +413,15 @@ impl Linker {
                     // identical to this type, aren't interpretable. Without bailing out here
                     // specifically, the next clause will match and infintely recur.
                     Some(Type {
-                        ty: PI::Referenced(eid, _),
+                        ty: PI::Referenced(effective_referent_name, _),
                         ..
-                    }) if eid == ref_id => {}
+                    }) if effective_referent_name == referent_name => {}
 
                     // Referenced types that have effective type that is NOT a reference are
                     // interpreted recursively (i.e. as the interpretation of the effective type).
-                    Some(effective) => return self.interpret_type(&ref_id, &effective),
+                    Some(non_referenced_type) => {
+                        return self.interpret_type(&referent_name, &non_referenced_type)
+                    }
 
                     // Referenced types with uninterpretable effective types are uninterpretable.
                     None => {}
@@ -415,9 +429,12 @@ impl Linker {
             },
 
             // Built-in INTEGER with named values is an enumeration.
-            PI::Builtin(BI::Integer(Some(nvs))) => {
+            PI::Builtin(BI::Integer(Some(named_vals))) => {
                 return SI::Scalar(SS::Enumeration(
-                    nvs.iter().map(|(n, v)| (v.clone(), n.clone())).collect(),
+                    named_vals
+                        .iter()
+                        .map(|(n, v)| (v.clone(), n.clone()))
+                        .collect(),
                 ))
             }
 
@@ -435,32 +452,36 @@ impl Linker {
         SI::Unknown
     }
 
-    fn interpret_table(&self, id: &Identifier, entry_type_id: &Identifier) -> Option<SMITable> {
-        let table_oid = self.absolute_oids.get(id)?;
-        let table_subtrie = self.by_oid.get_node(table_oid)?;
-        let (fragment, entry_id) = table_subtrie.iter().nth(1)?;
-        let entry_oid = table_oid
+    fn interpret_table(
+        &self,
+        table_name: &Identifier,
+        entry_type_name: &Identifier,
+    ) -> Option<SMITable> {
+        let table_num_oid = self.object_numeric_oids.get(table_name)?;
+        let table_subtrie = self.numeric_oid_names.get_node(table_num_oid)?;
+        let (fragment, table_entry_name) = table_subtrie.iter().nth(1)?;
+        let entry_num_oid = table_num_oid
             .iter()
             .chain(fragment)
             .copied()
             .collect::<Vec<_>>()
             .into();
 
-        let table_fields = self.interpret_table_fields(&entry_id)?;
+        let table_fields = self.interpret_table_fields(&table_entry_name)?;
 
         Some(SMITable {
-            table_id: IdentifiedObj::new(table_oid.clone(), id.clone()),
-            entry_id: IdentifiedObj::new(entry_oid, entry_id.clone()),
-            entry_type_id: entry_type_id.clone(),
+            table_object: IdentifiedObj::new(table_num_oid.clone(), table_name.clone()),
+            entry_object: IdentifiedObj::new(entry_num_oid, table_entry_name.clone()),
+            entry_type_name: entry_type_name.clone(),
             field_interpretation: table_fields,
         })
     }
 
     fn interpret_table_fields(
         &self,
-        entry_id: &Identifier,
+        table_entry_name: &Identifier,
     ) -> Option<BTreeMap<IdentifiedObj, SMIInterpretation>> {
-        let table_entry_type = self.find_effective_type(self.type_defs.get(entry_id)?)?;
+        let table_entry_type = self.find_effective_type(self.type_defs.get(table_entry_name)?)?;
         let table_fields = self
             .match_sequence_type(&table_entry_type)?
             .into_iter()
@@ -468,13 +489,16 @@ impl Linker {
             // definition that has the "best" type information, so we look up that identifier in
             // type_defs and interpret its type to get the field interpretation. If the SEQUENCE
             // field identifier doesn't refer to anything in type_defs, it means it definitely
-            // won't be in absolute_oids, so it's probably useless anyway and should just get
+            // won't be in object_numeric_oids, so it's probably useless anyway and should just get
             // filtered out.
-            .filter_map(|(fid, _)| {
-                self.type_defs.get(&fid).and_then(|ty| {
-                    let field_oid = self.absolute_oids.get(&fid)?;
-                    let interp = self.interpret_type(&fid, &ty);
-                    Some((IdentifiedObj::new(field_oid.clone(), fid), interp))
+            .filter_map(|(field_name, _)| {
+                self.type_defs.get(&field_name).and_then(|decl_type| {
+                    let field_num_oid = self.object_numeric_oids.get(&field_name)?;
+                    let interp = self.interpret_type(&field_name, &decl_type);
+                    Some((
+                        IdentifiedObj::new(field_num_oid.clone(), field_name),
+                        interp,
+                    ))
                 })
             })
             .collect::<BTreeMap<_, _>>();
@@ -484,14 +508,14 @@ impl Linker {
 
     fn interpret_table_entry(
         &self,
-        entry_id: &Identifier,
-        entry_type_id: &Identifier,
+        table_entry_name: &Identifier,
+        entry_type_name: &Identifier,
     ) -> Option<SMITable> {
-        let table_entry_oid = self.absolute_oids.get(entry_id)?;
-        let table_id = self
-            .by_oid
-            .get(&table_entry_oid[..(table_entry_oid.len() - 1)])?;
-        self.interpret_table(table_id, entry_type_id)
+        let entry_num_oid = self.object_numeric_oids.get(table_entry_name)?;
+        let table_name = self
+            .numeric_oid_names
+            .get(&entry_num_oid[..(entry_num_oid.len() - 1)])?;
+        self.interpret_table(table_name, entry_type_name)
     }
 
     fn match_sequence_type(
@@ -506,21 +530,21 @@ impl Linker {
         }
     }
 
-    fn find_effective_type(&self, ty: &Type<Identifier>) -> Option<Type<Identifier>> {
-        let mut effective_type = Some(ty.clone());
+    fn find_effective_type(&self, given_type: &Type<Identifier>) -> Option<Type<Identifier>> {
+        let mut effective_type = Some(given_type.clone());
 
         loop {
             let new_effective_type = if let Some(Type {
-                ty: PlainType::Referenced(ref id, _),
+                ty: PlainType::Referenced(ref referent_name, _),
                 ..
             }) = effective_type
             {
                 // If the current effective_type is a reference, check if it's an SMI well-known
                 // type. Otherwise, try to dereference it into new_effective_type.
-                if SMI_WELL_KNOWN_TYPES.get(id.1.as_str()).is_some() {
+                if SMI_WELL_KNOWN_TYPES.get(referent_name.1.as_str()).is_some() {
                     break;
                 } else {
-                    self.type_defs.get(&id)
+                    self.type_defs.get(&referent_name)
                 }
             } else {
                 // The current effective_type is either None, or a Builtin type. We're done.

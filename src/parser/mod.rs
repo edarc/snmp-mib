@@ -35,9 +35,9 @@ impl RawOidExpr {
     /// provided function should return a qualified `Identifier` given the unqualified identifier
     /// as a &str.
     pub fn qualify(self, resolve: impl Fn(String) -> Identifier) -> OidExpr {
-        let id = resolve(self.parent);
+        let name = resolve(self.parent);
         OidExpr {
-            parent: id,
+            parent: name,
             fragment: self.fragment,
         }
     }
@@ -144,8 +144,8 @@ fn oid_expr(input: &str) -> IResult<&str, RawOidExpr> {
             pair(opt(identifier), many0(tok(oid_elem))),
             ptok(tag("}")),
         ),
-        |(id, frag)| RawOidExpr {
-            parent: id.unwrap_or("").to_string(),
+        |(name, frag)| RawOidExpr {
+            parent: name.unwrap_or("").to_string(),
             fragment: frag.into(),
         },
     )(input)
@@ -227,9 +227,10 @@ fn imports(input: &str) -> IResult<&str, ModuleDecl> {
             tok(tag("FROM")),
             identifier,
         ),
-        |(ids, modname)| {
-            ids.into_iter()
-                .map(|id| (id, modname.clone()))
+        |(names, source_module)| {
+            names
+                .into_iter()
+                .map(|name| (name, source_module.clone()))
                 .collect::<Vec<_>>()
         },
     );

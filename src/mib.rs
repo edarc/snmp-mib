@@ -111,36 +111,40 @@ pub struct MIB {
 }
 
 impl MIB {
-    /// Look up a numeric OID and translate it to a maximally-specific `OidExpr`.
+    /// Look up any `OidExpr` and translate it to a maximally-specific `OidExpr`.
     ///
     /// The returned `OidExpr`'s parent will be whichever identifier known to this MIB matches the
-    /// largest prefix of the given OID. The fragment will contain any suffix for which the MIB
-    /// does not define a name.
-    pub fn translate_to_name(&self, oid: impl AsRef<[u32]>) -> OidExpr {
+    /// largest prefix of the given `OidExpr`. The fragment will contain any suffix for which the
+    /// MIB does not define a name.
+    pub fn lookup_best_oidexpr(&self, expr: impl IntoOidExpr) -> Option<OidExpr> {
+        let num_oid = self.lookup_numeric_oid(expr)?;
         // Decrement to skip the root.
-        let prefix_len = self.numeric_oid_names.prefix_iter(oid.as_ref()).count() - 1;
-        let (parent_oid, fragment) = oid.as_ref().split_at(prefix_len);
-        let parent = self.numeric_oid_names.get(parent_oid).unwrap();
-        OidExpr {
+        let prefix_len = self.numeric_oid_names.prefix_iter(&num_oid).count() - 1;
+        let (parent_oid, fragment) = num_oid.split_at(prefix_len);
+        let parent = self.numeric_oid_names.get(parent_oid)?;
+        Some(OidExpr {
             parent: parent.name.clone(),
             fragment: fragment.into(),
-        }
+        })
     }
 
-    pub fn lookup_oid(&self, name: impl IntoOidExpr) -> Option<NumericOid> {
-        let oe = name.into_oid_expr()?;
-        let mut oid = self.by_name.get(&oe.parent)?.to_vec();
-        oid.extend(oe.fragment);
-        Some(oid.into())
+    pub fn lookup_numeric_oid(&self, expr: impl IntoOidExpr) -> Option<NumericOid> {
+        let expr = expr.into_oid_expr()?;
+        let oid = self
+            .by_name
+            .get(&expr.parent)?
+            .index_by_fragment(&expr.fragment);
+        Some(oid)
     }
 
-    pub fn describe_object(&self, oid: impl AsRef<[u32]>) -> Option<MIBObjectDescriptor> {
+    pub fn describe_object(&self, expr: impl IntoOidExpr) -> Option<MIBObjectDescriptor> {
+        let num_oid = self.lookup_numeric_oid(expr)?;
         self.numeric_oid_names
-            .get(oid.as_ref())
-            .map(|ie| MIBObjectDescriptor {
-                object: IdentifiedObj::new(oid.as_ref().to_vec().into(), ie.name.clone()),
-                declared_type: ie.declared_type.clone(),
-                smi_interpretation: ie.smi_interpretation.clone(),
+            .get(&num_oid)
+            .map(|descriptor| MIBObjectDescriptor {
+                object: IdentifiedObj::new(num_oid, descriptor.name.clone()),
+                declared_type: descriptor.declared_type.clone(),
+                smi_interpretation: descriptor.smi_interpretation.clone(),
             })
     }
 }
@@ -186,9 +190,11 @@ impl Linker {
         Self {
             type_defs: BTreeMap::new(),
             object_uoms: BTreeMap::new(),
-            object_numeric_oids: BTreeMap::new(),
             numeric_oid_names: SequenceTrie::new(),
             orphan_identifiers: BTreeSet::new(),
+            object_numeric_oids: Some((Identifier::root(), vec![].into()))
+                .into_iter()
+                .collect(),
             object_oidexpr_defs: Some((
                 Identifier::new("", "iso"),
                 OidExpr {
@@ -281,24 +287,20 @@ impl Linker {
             // The parent is root, so this def is linked already.
             def.clone()
         } else if let Some(parent_fragment) = abs.get(&def.parent) {
-            // Parent is linked. Link this one by chaining its fragment to the parent fragment.
-            let this_fragment = parent_fragment
-                .iter()
-                .chain(def.fragment.iter())
-                .cloned()
-                .collect::<Vec<_>>();
+            // Parent is linked. Link this one by indexing the parent by this fragment.
+            let this_fragment = parent_fragment.index_by_fragment(&def.fragment);
             OidExpr {
                 parent: Identifier::root(),
-                fragment: this_fragment.into(),
+                fragment: this_fragment.to_vec().into(),
             }
         } else if let Some(parent_def) = rel.get(&def.parent) {
             // Parent is not linked. Recursively link it first.
-            let mut linked_parent_fragment =
-                Self::link_oidexpr_to_numeric_oid(&def.parent, parent_def, rel, abs)?.to_vec();
-            linked_parent_fragment.extend(def.fragment.iter().cloned());
+            let linked_parent_fragment =
+                Self::link_oidexpr_to_numeric_oid(&def.parent, parent_def, rel, abs)?
+                    .index_by_fragment(&def.fragment);
             OidExpr {
                 parent: Identifier::root(),
-                fragment: linked_parent_fragment.into(),
+                fragment: linked_parent_fragment.to_vec().into(),
             }
         } else {
             // This def's parent is not root, and was in neither the rel or abs maps, so there is
@@ -460,12 +462,7 @@ impl Linker {
         let table_num_oid = self.object_numeric_oids.get(table_name)?;
         let table_subtrie = self.numeric_oid_names.get_node(table_num_oid)?;
         let (fragment, table_entry_name) = table_subtrie.iter().nth(1)?;
-        let entry_num_oid = table_num_oid
-            .iter()
-            .chain(fragment)
-            .copied()
-            .collect::<Vec<_>>()
-            .into();
+        let entry_num_oid = table_num_oid.index_by_fragment(fragment);
 
         let table_fields = self.interpret_table_fields(&table_entry_name)?;
 

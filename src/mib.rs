@@ -83,6 +83,7 @@ impl From<SMIWellKnown> for SMIScalar {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SMIInterpretation {
+    Namespace(BTreeSet<IdentifiedObj>),
     Scalar(SMIScalar),
     Table(SMITable),
     TableRow(SMITable),
@@ -169,12 +170,12 @@ impl From<Loader> for MIB {
 }
 
 struct Linker {
-    pub type_defs: BTreeMap<Identifier, Type<Identifier>>,
-    pub object_uoms: BTreeMap<Identifier, String>,
-    pub object_oidexpr_defs: BTreeMap<Identifier, OidExpr>,
-    pub object_numeric_oids: BTreeMap<Identifier, NumericOid>,
     pub numeric_oid_names: SequenceTrie<u32, Identifier>,
+    pub object_numeric_oids: BTreeMap<Identifier, NumericOid>,
+    pub object_oidexpr_defs: BTreeMap<Identifier, OidExpr>,
+    pub object_uoms: BTreeMap<Identifier, String>,
     pub orphan_identifiers: BTreeSet<Identifier>,
+    pub type_defs: BTreeMap<Identifier, Type<Identifier>>,
     type_interpretation_cache: RefCell<BTreeMap<Identifier, SMIInterpretation>>,
 }
 
@@ -188,10 +189,7 @@ struct InternalObject {
 impl Linker {
     fn new_empty() -> Self {
         Self {
-            type_defs: BTreeMap::new(),
-            object_uoms: BTreeMap::new(),
             numeric_oid_names: SequenceTrie::new(),
-            orphan_identifiers: BTreeSet::new(),
             object_numeric_oids: Some((Identifier::root(), vec![].into()))
                 .into_iter()
                 .collect(),
@@ -204,6 +202,9 @@ impl Linker {
             ))
             .into_iter()
             .collect(),
+            object_uoms: BTreeMap::new(),
+            orphan_identifiers: BTreeSet::new(),
+            type_defs: BTreeMap::new(),
             type_interpretation_cache: RefCell::new(BTreeMap::new()),
         }
     }
@@ -314,15 +315,40 @@ impl Linker {
     }
 
     pub fn make_entry(&self, name: &Identifier) -> InternalObject {
-        let decl_type = self.type_defs.get(&name);
+        let num_oid = self.object_numeric_oids.get(name);
+        let declared_type = self.type_defs.get(&name);
+
+        let interpretation = if let Some(declared_type) = declared_type {
+            self.interpret_type(name, declared_type)
+        } else if let Some(num_oid) = num_oid {
+            let children = self
+                .numeric_oid_names
+                .get_node(num_oid)
+                .unwrap()
+                .children_with_keys();
+            if !children.is_empty() {
+                SMIInterpretation::Namespace(
+                    children
+                        .into_iter()
+                        .filter_map(|(fragment, subtrie)| {
+                            subtrie.value().map(|name| (fragment, name))
+                        })
+                        .map(|(fragment, name)| {
+                            IdentifiedObj(num_oid.index_by_integer(*fragment), name.clone())
+                        })
+                        .collect(),
+                )
+            } else {
+                SMIInterpretation::Unknown
+            }
+        } else {
+            SMIInterpretation::Unknown
+        };
 
         InternalObject {
             name: name.clone(),
-            declared_type: decl_type.cloned(),
-            smi_interpretation: decl_type
-                .as_ref()
-                .map(|dt| self.interpret_type(name, dt))
-                .unwrap_or(SMIInterpretation::Unknown),
+            declared_type: declared_type.cloned(),
+            smi_interpretation: interpretation,
         }
     }
 

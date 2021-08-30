@@ -87,6 +87,7 @@ pub enum SMIInterpretation {
     Scalar(SMIScalar),
     Table(SMITable),
     TableRow(SMITable),
+    TableCell(SMITableCell),
     Unknown,
 }
 
@@ -96,6 +97,18 @@ pub struct SMITable {
     entry_object: IdentifiedObj,
     entry_type_name: Identifier,
     field_interpretation: BTreeMap<IdentifiedObj, SMIInterpretation>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SMITableCell {
+    cell_interpretation: SMIScalar,
+    table: SMITable,
+    indices: Vec<(IdentifiedObj, TableIndexVal)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TableIndexVal {
+    Integer(u32),
 }
 
 #[derive(Clone, Debug)]
@@ -119,14 +132,22 @@ impl MIB {
     /// MIB does not define a name.
     pub fn lookup_best_oidexpr(&self, expr: impl IntoOidExpr) -> Option<OidExpr> {
         let num_oid = self.lookup_numeric_oid(expr)?;
+        self.lookup_best_oidexpr_internal(&num_oid)
+            .map(|(_, oidexpr)| oidexpr)
+    }
+
+    fn lookup_best_oidexpr_internal(&self, num_oid: &NumericOid) -> Option<(NumericOid, OidExpr)> {
         // Decrement to skip the root.
-        let prefix_len = self.numeric_oid_names.prefix_iter(&num_oid).count() - 1;
-        let (parent_oid, fragment) = num_oid.split_at(prefix_len);
-        let parent = self.numeric_oid_names.get(parent_oid)?;
-        Some(OidExpr {
-            parent: parent.name.clone(),
-            fragment: fragment.into(),
-        })
+        let prefix_len = self.numeric_oid_names.prefix_iter(num_oid).count() - 1;
+        let (parent_num_oid, fragment) = num_oid.split_at(prefix_len);
+        let parent = self.numeric_oid_names.get(parent_num_oid)?;
+        Some((
+            parent_num_oid.into(),
+            OidExpr {
+                parent: parent.name.clone(),
+                fragment: fragment.into(),
+            },
+        ))
     }
 
     pub fn lookup_numeric_oid(&self, expr: impl IntoOidExpr) -> Option<NumericOid> {
@@ -139,14 +160,38 @@ impl MIB {
     }
 
     pub fn describe_object(&self, expr: impl IntoOidExpr) -> Option<ObjectDescriptor> {
+        use SMIInterpretation as SI;
+
         let num_oid = self.lookup_numeric_oid(expr)?;
-        self.numeric_oid_names
-            .get(&num_oid)
-            .map(|descriptor| ObjectDescriptor {
-                object: IdentifiedObj::new(num_oid, descriptor.name.clone()),
-                declared_type: descriptor.declared_type.clone(),
-                smi_interpretation: descriptor.smi_interpretation.clone(),
-            })
+        let (parent_num_oid, best_expr) = self.lookup_best_oidexpr_internal(&num_oid)?;
+        let int_descr = self.numeric_oid_names.get(&parent_num_oid)?;
+
+        let interpretation = if let SI::Scalar(cell_scalar) = &int_descr.smi_interpretation {
+            let parent_descr = self.describe_object(&parent_num_oid.parent());
+            if let Some(ObjectDescriptor {
+                smi_interpretation: SI::TableRow(table),
+                ..
+            }) = parent_descr
+            {
+                // TODO: Compute this from best_expr.fragment
+                let indices = None.into_iter().collect();
+                SI::TableCell(SMITableCell {
+                    cell_interpretation: cell_scalar.clone(),
+                    table,
+                    indices,
+                })
+            } else {
+                int_descr.smi_interpretation.clone()
+            }
+        } else {
+            int_descr.smi_interpretation.clone()
+        };
+
+        Some(ObjectDescriptor {
+            object: IdentifiedObj::new(parent_num_oid, int_descr.name.clone()),
+            declared_type: int_descr.declared_type.clone(),
+            smi_interpretation: interpretation,
+        })
     }
 }
 

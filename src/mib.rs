@@ -210,6 +210,8 @@ impl Linker {
     }
 
     fn new<'a>(decls: impl IntoIterator<Item = QualifiedDecl>) -> Self {
+        use QualifiedDecl as QD;
+
         let mut new = Self::new_empty();
 
         for decl in decls {
@@ -218,17 +220,26 @@ impl Linker {
             }
 
             match decl {
-                QualifiedDecl::PlainTypeDef(name, ty) => {
+                QD::PlainTypeDef(name, ty) => {
                     new.type_defs.insert(name, ty);
                 }
-                QualifiedDecl::ObjectType(name, _, ty, uom) => {
+                QD::ObjectType(name, _, ty, uom) => {
                     new.type_defs.insert(name.clone(), ty);
                     uom.map(|uom| new.object_uoms.insert(name, uom));
                 }
-                QualifiedDecl::TextualConvention(name, ty) => {
+                QD::TextualConvention(name, ty) => {
                     new.type_defs.insert(name.clone(), ty);
                 }
-                _ => {}
+                QD::AgentCapabilities(..)
+                | QD::Irrelevant
+                | QD::MacroDef(..)
+                | QD::ModuleCompliance(..)
+                | QD::ModuleIdentity(..)
+                | QD::NotificationGroup(..)
+                | QD::NotificationType(..)
+                | QD::PlainOidDef(..)
+                | QD::ObjectIdentity(..)
+                | QD::ObjectGroup(..) => {}
             }
         }
 

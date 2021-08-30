@@ -99,7 +99,7 @@ pub struct SMITable {
 }
 
 #[derive(Clone, Debug)]
-pub struct MIBObjectDescriptor {
+pub struct ObjectDescriptor {
     pub object: IdentifiedObj,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
@@ -107,7 +107,7 @@ pub struct MIBObjectDescriptor {
 
 #[derive(Clone, Debug)]
 pub struct MIB {
-    numeric_oid_names: SequenceTrie<u32, InternalObject>,
+    numeric_oid_names: SequenceTrie<u32, InternalObjectDescriptor>,
     by_name: BTreeMap<Identifier, NumericOid>,
 }
 
@@ -138,11 +138,11 @@ impl MIB {
         Some(oid)
     }
 
-    pub fn describe_object(&self, expr: impl IntoOidExpr) -> Option<MIBObjectDescriptor> {
+    pub fn describe_object(&self, expr: impl IntoOidExpr) -> Option<ObjectDescriptor> {
         let num_oid = self.lookup_numeric_oid(expr)?;
         self.numeric_oid_names
             .get(&num_oid)
-            .map(|descriptor| MIBObjectDescriptor {
+            .map(|descriptor| ObjectDescriptor {
                 object: IdentifiedObj::new(num_oid, descriptor.name.clone()),
                 declared_type: descriptor.declared_type.clone(),
                 smi_interpretation: descriptor.smi_interpretation.clone(),
@@ -180,7 +180,7 @@ struct Linker {
 }
 
 #[derive(Clone, Debug)]
-struct InternalObject {
+struct InternalObjectDescriptor {
     pub name: Identifier,
     pub declared_type: Option<Type<Identifier>>,
     pub smi_interpretation: SMIInterpretation,
@@ -314,7 +314,7 @@ impl Linker {
         Ok(linked_def.fragment.to_vec().into())
     }
 
-    pub fn make_entry(&self, name: &Identifier) -> InternalObject {
+    pub fn make_entry(&self, name: &Identifier) -> InternalObjectDescriptor {
         let num_oid = self.object_numeric_oids.get(name);
         let declared_type = self.type_defs.get(&name);
 
@@ -345,7 +345,7 @@ impl Linker {
             SMIInterpretation::Unknown
         };
 
-        InternalObject {
+        InternalObjectDescriptor {
             name: name.clone(),
             declared_type: declared_type.cloned(),
             smi_interpretation: interpretation,

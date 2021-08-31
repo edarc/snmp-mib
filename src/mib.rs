@@ -538,7 +538,7 @@ impl Linker {
                             subtrie.value().map(|name| (fragment, name))
                         })
                         .map(|(fragment, name)| {
-                            IdentifiedObj(num_oid.index_by_integer(*fragment), name.clone())
+                            IdentifiedObj::new(num_oid.index_by_integer(*fragment), name.clone())
                         })
                         .collect(),
                 )

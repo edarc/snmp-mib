@@ -12,7 +12,7 @@ use crate::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
 
 lazy_static! {
     static ref SMI_WELL_KNOWN_TYPES: HashMap<&'static str, SMIWellKnown> = [
-        ("BITS", SMIWellKnown::Bits),
+        // RFCs 1155, 2578
         ("Counter", SMIWellKnown::Counter),
         ("Counter32", SMIWellKnown::Counter32),
         ("Counter64", SMIWellKnown::Counter64),
@@ -24,6 +24,8 @@ lazy_static! {
         ("Opaque", SMIWellKnown::Opaque),
         ("TimeTicks", SMIWellKnown::TimeTicks),
         ("Unsigned32", SMIWellKnown::Unsigned32),
+        // RFC 2578
+        ("BITS", SMIWellKnown::Bits),
     ]
     .iter()
     .cloned()
@@ -32,7 +34,6 @@ lazy_static! {
 
 #[derive(Clone, Debug, Copy)]
 pub enum SMIWellKnown {
-    Bits,
     Counter,
     Counter32,
     Counter64,
@@ -44,6 +45,7 @@ pub enum SMIWellKnown {
     Opaque,
     TimeTicks,
     Unsigned32,
+    Bits,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,7 +67,6 @@ impl From<SMIWellKnown> for SMIScalar {
         use SMIScalar as SS;
         use SMIWellKnown as SWK;
         match swk {
-            SWK::Bits => SS::Integer(None),
             SWK::Counter => SS::Counter(None),
             SWK::Counter32 => SS::Counter(None),
             SWK::Counter64 => SS::Counter(None),
@@ -77,6 +78,7 @@ impl From<SMIWellKnown> for SMIScalar {
             SWK::Opaque => SS::Bytes,
             SWK::TimeTicks => SS::TimeTicks,
             SWK::Unsigned32 => SS::Integer(None),
+            SWK::Bits => SS::Integer(None),
         }
     }
 }
@@ -108,7 +110,8 @@ pub struct SMITableCell {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableIndexVal {
-    Integer(u32),
+    Integer(BigInt),
+    Enumeration(BigInt, String),
 }
 
 #[derive(Clone, Debug)]

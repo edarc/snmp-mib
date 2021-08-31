@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::convert::TryInto;
 use std::fmt::Debug;
 
 use lazy_static::lazy_static;
@@ -113,6 +114,7 @@ pub struct SMITableCell {
 pub enum TableIndexVal {
     Integer(BigInt),
     Enumeration(BigInt, String),
+    IpAddress(std::net::IpAddr),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -140,6 +142,18 @@ impl SMIScalar {
         use TableIndexVal as TIV;
         match self {
             SS::Integer(_) => fragment_iter.next().map(|v| TIV::Integer(v.into())),
+            SS::IpAddress => {
+                let mut octet_iter = fragment_iter.take(4);
+                let mut octets = [0u8; 4];
+                // TODO: Handle try_into failing or iterator coming up short.
+                octets.fill_with(|| {
+                    octet_iter
+                        .next()
+                        .and_then(|v| v.try_into().ok())
+                        .unwrap_or(0)
+                });
+                Some(TIV::IpAddress(octets.into()))
+            }
             _ => None,
         }
     }

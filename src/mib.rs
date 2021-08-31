@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 use num::BigInt;
 use sequence_trie::SequenceTrie;
 
-use crate::loader::{Loader, QualifiedDecl};
+use crate::loader::{Loader, QualifiedDecl, TableIndexing};
 use crate::parser::{BuiltinType, PlainType, Type};
 use crate::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
 
@@ -99,6 +99,7 @@ pub struct SMITable {
     entry_object: IdentifiedObj,
     entry_type_name: Identifier,
     field_interpretation: BTreeMap<IdentifiedObj, SMIInterpretation>,
+    indexing: Vec<(IdentifiedObj, TableIndexEncoding)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -112,6 +113,21 @@ pub struct SMITableCell {
 pub enum TableIndexVal {
     Integer(BigInt),
     Enumeration(BigInt, String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TableIndexEncoding {
+    Normal,
+    Implied,
+}
+
+impl From<bool> for TableIndexEncoding {
+    fn from(is_implied: bool) -> Self {
+        match is_implied {
+            true => TableIndexEncoding::Implied,
+            false => TableIndexEncoding::Normal,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -219,6 +235,7 @@ impl From<Loader> for MIB {
 
 struct Linker {
     pub numeric_oid_names: SequenceTrie<u32, Identifier>,
+    pub object_indexes: BTreeMap<Identifier, TableIndexing>,
     pub object_numeric_oids: BTreeMap<Identifier, NumericOid>,
     pub object_oidexpr_defs: BTreeMap<Identifier, OidExpr>,
     pub object_uoms: BTreeMap<Identifier, String>,
@@ -238,6 +255,7 @@ impl Linker {
     fn new_empty() -> Self {
         Self {
             numeric_oid_names: SequenceTrie::new(),
+            object_indexes: BTreeMap::new(),
             object_numeric_oids: Some((Identifier::root(), vec![].into()))
                 .into_iter()
                 .collect(),
@@ -276,6 +294,9 @@ impl Linker {
                     detail
                         .unit_of_measure
                         .map(|uom| new.object_uoms.insert(name.clone(), uom));
+                    detail
+                        .indexing
+                        .map(|idx| new.object_indexes.insert(name, idx));
                 }
                 QD::TextualConvention(name, ty) => {
                     new.type_defs.insert(name.clone(), ty);
@@ -553,11 +574,31 @@ impl Linker {
 
         let table_fields = self.interpret_table_fields(&table_entry_name)?;
 
+        let effective_indexing = match self.object_indexes.get(&table_entry_name)? {
+            TableIndexing::Index(cols) => cols,
+            TableIndexing::Augments(name) => match self.object_indexes.get(&name)? {
+                TableIndexing::Index(cols) => cols,
+                _ => return None,
+            },
+        };
+        let indexing = effective_indexing
+            .iter()
+            .filter_map(|(name, implied)| {
+                self.object_numeric_oids.get(&name).map(|num_oid| {
+                    (
+                        IdentifiedObj::new(num_oid.clone(), name.clone()),
+                        (*implied).into(),
+                    )
+                })
+            })
+            .collect();
+
         Some(SMITable {
             table_object: IdentifiedObj::new(table_num_oid.clone(), table_name.clone()),
             entry_object: IdentifiedObj::new(entry_num_oid, table_entry_name.clone()),
             entry_type_name: entry_type_name.clone(),
             field_interpretation: table_fields,
+            indexing,
         })
     }
 

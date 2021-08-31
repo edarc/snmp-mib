@@ -16,11 +16,23 @@ pub enum QualifiedDecl {
     NotificationType(Identifier, OidExpr, Vec<Identifier>),
     ObjectGroup(Identifier, OidExpr, Vec<Identifier>),
     ObjectIdentity(Identifier, OidExpr),
-    ObjectType(Identifier, OidExpr, Type<Identifier>, Option<String>),
+    ObjectType(Identifier, OidExpr, Type<Identifier>, ObjectTypeDetails),
     PlainOidDef(Identifier, OidExpr),
     PlainTypeDef(Identifier, Type<Identifier>),
     TextualConvention(Identifier, Type<Identifier>),
     Irrelevant,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObjectTypeDetails {
+    pub unit_of_measure: Option<String>,
+    pub indexing: Option<TableIndexing>,
+}
+
+#[derive(Clone, Debug)]
+pub enum TableIndexing {
+    Index(Vec<(Identifier, bool)>),
+    Augments(Identifier),
 }
 
 trait Qualify {
@@ -77,6 +89,30 @@ impl Qualify for BuiltinType<String> {
     }
 }
 
+impl Qualify for crate::parser::ObjectTypeDetails {
+    type Output = ObjectTypeDetails;
+    fn qualify(self, resolve: &dyn Fn(String) -> Identifier) -> Self::Output {
+        ObjectTypeDetails {
+            unit_of_measure: self.unit_of_measure,
+            indexing: self.indexing.map(|idx| idx.qualify(resolve)),
+        }
+    }
+}
+
+impl Qualify for crate::parser::TableIndexing {
+    type Output = TableIndexing;
+    fn qualify(self, resolve: &dyn Fn(String) -> Identifier) -> Self::Output {
+        match self {
+            crate::parser::TableIndexing::Index(cols) => TableIndexing::Index(
+                cols.into_iter()
+                    .map(|(id, implied)| (resolve(id), implied))
+                    .collect(),
+            ),
+            crate::parser::TableIndexing::Augments(name) => TableIndexing::Augments(resolve(name)),
+        }
+    }
+}
+
 impl QualifiedDecl {
     /// Construct a `QualifiedDecl` from a `ModuleDecl` by applying a resolver function `resolve`
     /// to the unqualified identifiers in the `ModuleDecl`.
@@ -105,9 +141,12 @@ impl QualifiedDecl {
                 mi.into_iter().map(resolve).collect(),
             ),
             MD::ObjectIdentity(n, rd) => QD::ObjectIdentity(resolve(n), rd.qualify(resolve)),
-            MD::ObjectType(n, rd, ti, u) => {
-                QD::ObjectType(resolve(n), rd.qualify(resolve), ti.qualify(resolve), u)
-            }
+            MD::ObjectType(n, rd, ti, det) => QD::ObjectType(
+                resolve(n),
+                rd.qualify(resolve),
+                ti.qualify(resolve),
+                det.qualify(resolve),
+            ),
             MD::PlainOidDef(n, rd) => QD::PlainOidDef(resolve(n), rd.qualify(resolve)),
             MD::PlainTypeDef(n, ti) => QD::PlainTypeDef(resolve(n), ti.qualify(resolve)),
             MD::TextualConvention(n, ti) => QD::TextualConvention(resolve(n), ti.qualify(resolve)),

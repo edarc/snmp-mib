@@ -56,11 +56,23 @@ pub enum ModuleDecl {
     NotificationType(String, RawOidExpr, Vec<String>),
     ObjectGroup(String, RawOidExpr, Vec<String>),
     ObjectIdentity(String, RawOidExpr),
-    ObjectType(String, RawOidExpr, Type<String>, Option<String>),
+    ObjectType(String, RawOidExpr, Type<String>, ObjectTypeDetails),
     PlainOidDef(String, RawOidExpr),
     PlainTypeDef(String, Type<String>),
     TextualConvention(String, Type<String>),
     Irrelevant,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObjectTypeDetails {
+    pub unit_of_measure: Option<String>,
+    pub indexing: Option<TableIndexing>,
+}
+
+#[derive(Clone, Debug)]
+pub enum TableIndexing {
+    Index(Vec<(String, bool)>),
+    Augments(String),
 }
 
 impl ModuleDecl {
@@ -338,8 +350,7 @@ fn object_identity(input: &str) -> IResult<&str, ModuleDecl> {
 
 /// Parse an `OBJECT-TYPE` macro.
 fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
-    let index = value(
-        (),
+    let index = map(
         preceded(
             tok(tag("INDEX")),
             delimited(
@@ -348,13 +359,20 @@ fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
                 ptok(tag("}")),
             ),
         ),
+        |cols| {
+            TableIndexing::Index(
+                cols.into_iter()
+                    .map(|(implied, ident)| (ident.to_string(), implied.is_some()))
+                    .collect(),
+            )
+        },
     );
-    let augments = value(
-        (),
+    let augments = map(
         preceded(
             tok(tag("AUGMENTS")),
             delimited(ptok(tag("{")), identifier, ptok(tag("}"))),
         ),
+        |id| TableIndexing::Augments(id.to_string()),
     );
     map(
         tuple((
@@ -374,7 +392,17 @@ fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
             ptok(tag("::=")),
             oid_expr,
         )),
-        |t| ModuleDecl::ObjectType(t.0.to_string(), t.11, t.2, t.3.map(|s| s.to_string())),
+        |t| {
+            ModuleDecl::ObjectType(
+                t.0.to_string(),
+                t.11,
+                t.2,
+                ObjectTypeDetails {
+                    unit_of_measure: t.3.map(|s| s.to_string()),
+                    indexing: t.8,
+                },
+            )
+        },
     )(input)
 }
 

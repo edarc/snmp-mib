@@ -271,9 +271,11 @@ impl Linker {
                 QD::PlainTypeDef(name, ty) => {
                     new.type_defs.insert(name, ty);
                 }
-                QD::ObjectType(name, _, ty, uom) => {
+                QD::ObjectType(name, _, ty, detail) => {
                     new.type_defs.insert(name.clone(), ty);
-                    uom.map(|uom| new.object_uoms.insert(name, uom));
+                    detail
+                        .unit_of_measure
+                        .map(|uom| new.object_uoms.insert(name.clone(), uom));
                 }
                 QD::TextualConvention(name, ty) => {
                     new.type_defs.insert(name.clone(), ty);

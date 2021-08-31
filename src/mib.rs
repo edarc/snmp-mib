@@ -130,6 +130,21 @@ impl From<bool> for TableIndexEncoding {
     }
 }
 
+impl SMIScalar {
+    fn decode_from_num_oid(
+        &self,
+        mut fragment_iter: impl Iterator<Item = u32>,
+        encoding: TableIndexEncoding,
+    ) -> Option<TableIndexVal> {
+        use SMIScalar as SS;
+        use TableIndexVal as TIV;
+        match self {
+            SS::Integer(_) => fragment_iter.next().map(|v| TIV::Integer(v.into())),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ObjectDescriptor {
     pub object: IdentifiedObj,
@@ -192,8 +207,27 @@ impl MIB {
                 ..
             }) = parent_descr
             {
-                // TODO: Compute this from best_expr.fragment
-                let indices = None.into_iter().collect();
+                let mut fragment = best_expr.fragment.into_iter();
+                println!("{:?}", fragment);
+                let mut indices = vec![];
+
+                for (index, encoding) in table.indexing.iter() {
+                    let decoded_value = match table.field_interpretation.get(&index) {
+                        Some(SI::Scalar(scalar_type)) => {
+                            if let Some(scalar_val) =
+                                scalar_type.decode_from_num_oid(&mut fragment, *encoding)
+                            {
+                                scalar_val
+                            } else {
+                                break;
+                            }
+                        }
+
+                        _ => return None,
+                    };
+                    indices.push((index.clone(), decoded_value));
+                }
+
                 SI::TableCell(SMITableCell {
                     cell_interpretation: cell_scalar.clone(),
                     table,

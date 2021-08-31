@@ -179,7 +179,7 @@ impl Deref for IdentifiedObj {
 }
 
 /// Root reference, OID fragment
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OidExpr {
     pub parent: Identifier,
     pub fragment: SmallVec<[u32; 1]>,
@@ -249,6 +249,18 @@ impl IntoOidExpr for NumericOid {
 impl<'a> IntoOidExpr for &'a NumericOid {
     fn into_oid_expr(self) -> Option<OidExpr> {
         ("", self).into_oid_expr()
+    }
+}
+
+impl IntoOidExpr for OidExpr {
+    fn into_oid_expr(self) -> Option<OidExpr> {
+        Some(self)
+    }
+}
+
+impl<'a> IntoOidExpr for &'a OidExpr {
+    fn into_oid_expr(self) -> Option<OidExpr> {
+        Some(self.clone())
     }
 }
 

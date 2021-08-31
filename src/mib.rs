@@ -27,6 +27,8 @@ lazy_static! {
         ("Unsigned32", SMIWellKnown::Unsigned32),
         // RFC 2578
         ("BITS", SMIWellKnown::Bits),
+        // RFC 3291
+        ("InetAddress", SMIWellKnown::InetAddress),
     ]
     .iter()
     .cloned()
@@ -47,6 +49,7 @@ pub enum SMIWellKnown {
     TimeTicks,
     Unsigned32,
     Bits,
+    InetAddress,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -57,10 +60,16 @@ pub enum SMIScalar {
     Enumeration(HashMap<BigInt, String>),
     Gauge(Option<String>),
     Integer(Option<String>),
-    IpAddress,
+    InetAddress(InetAddressEncoding),
     ObjectIdentifier,
     Text,
     TimeTicks,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InetAddressEncoding {
+    RFC1155,
+    RFC3291,
 }
 
 impl From<SMIWellKnown> for SMIScalar {
@@ -75,11 +84,12 @@ impl From<SMIWellKnown> for SMIScalar {
             SWK::Gauge => SS::Gauge(None),
             SWK::Gauge32 => SS::Gauge(None),
             SWK::Integer32 => SS::Integer(None),
-            SWK::IpAddress => SS::IpAddress,
+            SWK::IpAddress => SS::InetAddress(InetAddressEncoding::RFC1155),
             SWK::Opaque => SS::Bytes,
             SWK::TimeTicks => SS::TimeTicks,
             SWK::Unsigned32 => SS::Integer(None),
             SWK::Bits => SS::Integer(None),
+            SWK::InetAddress => SS::InetAddress(InetAddressEncoding::RFC3291),
         }
     }
 }
@@ -114,7 +124,16 @@ pub struct SMITableCell {
 pub enum TableIndexVal {
     Integer(BigInt),
     Enumeration(BigInt, String),
-    IpAddress(std::net::IpAddr),
+    InetAddress(InetAddress),
+    ObjectIdentifier(OidExpr),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum InetAddress {
+    IP(std::net::IpAddr),
+    ZonedIP(std::net::IpAddr, u32),
+    Hostname(String),
+    Unknown(Vec<u8>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -138,24 +157,77 @@ impl SMIScalar {
         mut fragment_iter: impl Iterator<Item = u32>,
         encoding: TableIndexEncoding,
     ) -> Option<TableIndexVal> {
+        use InetAddressEncoding as Enc;
         use SMIScalar as SS;
         use TableIndexVal as TIV;
         match self {
-            SS::Integer(_) => fragment_iter.next().map(|v| TIV::Integer(v.into())),
-            SS::IpAddress => {
-                let mut octet_iter = fragment_iter.take(4);
-                let mut octets = [0u8; 4];
-                // TODO: Handle try_into failing or iterator coming up short.
-                octets.fill_with(|| {
-                    octet_iter
-                        .next()
-                        .and_then(|v| v.try_into().ok())
-                        .unwrap_or(0)
-                });
-                Some(TIV::IpAddress(octets.into()))
+            SS::Bits(_names) => None,
+            SS::Bytes => None,
+            SS::Counter(_) => None,
+            SS::Enumeration(variants) => {
+                let value = fragment_iter.next()?.into();
+                let name = variants.get(&value)?;
+                Some(TIV::Enumeration(value, name.to_string()))
             }
-            _ => None,
+            SS::Gauge(_) => None,
+            SS::Integer(_) => fragment_iter.next().map(|v| TIV::Integer(v.into())),
+            SS::InetAddress(encoding) => match encoding {
+                Enc::RFC1155 => Self::decode_ipv4_from_num_oid(fragment_iter),
+                Enc::RFC3291 => {
+                    // TODO: This is a terrible heuristic.
+                    let bytes = Self::decode_bytes_from_num_oid(fragment_iter)?;
+                    match bytes.len() {
+                        4 => {
+                            let mut octets = [0u8; 4];
+                            octets.copy_from_slice(&bytes);
+                            Some(TIV::InetAddress(InetAddress::IP(octets.into())))
+                        }
+                        16 => {
+                            let mut octets = [0u8; 16];
+                            octets.copy_from_slice(&bytes);
+                            Some(TIV::InetAddress(InetAddress::IP(octets.into())))
+                        }
+                        _ => None,
+                    }
+                }
+            },
+            SS::ObjectIdentifier => {
+                let fragment = Self::decode_length_encoded_from_num_oid(fragment_iter)?;
+                let oidexpr = NumericOid::from(fragment).into_oid_expr()?;
+                Some(TIV::ObjectIdentifier(oidexpr))
+            }
+            SS::Text => None,
+            SS::TimeTicks => None,
         }
+    }
+
+    fn decode_ipv4_from_num_oid(fragment_iter: impl Iterator<Item = u32>) -> Option<TableIndexVal> {
+        use TableIndexVal as TIV;
+        let mut octet_iter = fragment_iter.take(4);
+        let mut octets = [0u8; 4];
+        // TODO: Handle try_into failing or iterator coming up short.
+        octets.fill_with(|| {
+            octet_iter
+                .next()
+                .and_then(|v| v.try_into().ok())
+                .unwrap_or(0)
+        });
+        Some(TIV::InetAddress(InetAddress::IP(octets.into())))
+    }
+
+    fn decode_bytes_from_num_oid(fragment_iter: impl Iterator<Item = u32>) -> Option<Vec<u8>> {
+        Self::decode_length_encoded_from_num_oid(fragment_iter).map(|vals| {
+            vals.into_iter()
+                .filter_map(|val| val.try_into().ok())
+                .collect()
+        })
+    }
+
+    fn decode_length_encoded_from_num_oid(
+        mut fragment_iter: impl Iterator<Item = u32>,
+    ) -> Option<Vec<u32>> {
+        let count = fragment_iter.next()?;
+        Some(fragment_iter.take(count.try_into().ok()?).collect())
     }
 }
 
@@ -228,12 +300,14 @@ impl MIB {
                 for (index, encoding) in table.indexing.iter() {
                     let decoded_value = match table.field_interpretation.get(&index) {
                         Some(SI::Scalar(scalar_type)) => {
-                            if let Some(scalar_val) =
-                                scalar_type.decode_from_num_oid(&mut fragment, *encoding)
-                            {
-                                scalar_val
-                            } else {
-                                break;
+                            match scalar_type.decode_from_num_oid(&mut fragment, *encoding) {
+                                Some(TableIndexVal::ObjectIdentifier(oidexpr)) => {
+                                    TableIndexVal::ObjectIdentifier(
+                                        self.lookup_best_oidexpr(&oidexpr).unwrap_or(oidexpr),
+                                    )
+                                }
+                                Some(scalar_val) => scalar_val,
+                                None => break,
                             }
                         }
 

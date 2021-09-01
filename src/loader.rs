@@ -1,3 +1,5 @@
+//! Loading and parsing SMIv2 MIB module definitions.
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
@@ -175,16 +177,22 @@ impl QualifiedDecl {
     }
 }
 
-/// Loader loads MIB modules from multiple files and resolves all identifiers to fully-qualified
-/// ones.
+/// Loads and parses SMIv2 MIB module definitions.
+///
+/// It is used to load MIB modules from multiple files. It prepares each parsed module to be
+/// compiled into a MIB by resolving all identifiers to fully-qualified ones based on `IMPORTS`.
 #[derive(Clone, Debug)]
 pub struct Loader(pub(crate) Vec<QualifiedDecl>);
 
 impl Loader {
+    /// Create a new `Loader` with no modules loaded.
     pub fn new() -> Self {
         Loader(Vec::new())
     }
 
+    /// Load a MIB module from a file.
+    ///
+    /// This can be called repeatedly to load multiple MIB modules prior to compiling into a MIB.
     pub fn load_file(&mut self, path: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
         let module_name_fixups = vec![("RFC-1213".to_string(), "RFC1213-MIB".to_string())]
             .into_iter()

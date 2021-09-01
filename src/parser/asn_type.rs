@@ -462,7 +462,7 @@ fn value_constraint(input: &str) -> IResult<&str, Constraint> {
 //////////////////////////////////////////////////////////////////////////////////////////
 
 /// Encoding references are not supported.
-pub fn type_tag(input: &str) -> IResult<&str, TypeTag> {
+fn type_tag(input: &str) -> IResult<&str, TypeTag> {
     let class = map(
         opt(alt((
             value(TypeTagClass::Universal, kw("UNIVERSAL")),

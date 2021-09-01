@@ -18,7 +18,7 @@ use nom::{
 ///
 /// This requires that every entry in the definition except the first either be a plain integer, or
 /// a name with an associated integer like `dod(2)`.
-pub fn oid_expr(input: &str) -> IResult<&str, RawOidExpr> {
+fn oid_expr(input: &str) -> IResult<&str, RawOidExpr> {
     let oid_elem = alt((
         unsigned,
         delimited(pair(identifier, sym("(")), unsigned, sym(")")),
@@ -34,7 +34,7 @@ pub fn oid_expr(input: &str) -> IResult<&str, RawOidExpr> {
 }
 
 /// Parse a `STATUS` stanza in an SMI macro.
-pub fn macro_status(input: &str) -> IResult<&str, &str> {
+fn macro_status(input: &str) -> IResult<&str, &str> {
     preceded(
         kw("STATUS"),
         tok(alt((
@@ -48,17 +48,17 @@ pub fn macro_status(input: &str) -> IResult<&str, &str> {
 }
 
 /// Parse a `DESCRIPTION` stanza in an SMI macro.
-pub fn macro_description(input: &str) -> IResult<&str, &str> {
+fn macro_description(input: &str) -> IResult<&str, &str> {
     preceded(kw("DESCRIPTION"), quoted_string)(input)
 }
 
 /// Parse a `REFERENCE` stanza in an SMI macro.
-pub fn macro_reference(input: &str) -> IResult<&str, Option<&str>> {
+fn macro_reference(input: &str) -> IResult<&str, Option<&str>> {
     opt(preceded(kw("REFERENCE"), quoted_string))(input)
 }
 
 /// Parse a `DEFVAL` stanza in an SMI macro.
-pub fn macro_defval(input: &str) -> IResult<&str, &str> {
+fn macro_defval(input: &str) -> IResult<&str, &str> {
     let defval_val = alt((
         delimited(sym("{"), is_not("}"), sym("}")),
         value("", pair(sym("{"), sym("}"))),
@@ -72,7 +72,7 @@ pub fn macro_defval(input: &str) -> IResult<&str, &str> {
 /// Depending on which macro it occurs in, only certain subsets of specifiers are grammatically
 /// valid by the standard, but that is ignored here and this parser is used universally to accept
 /// any allowed specifiers from every macro defined in SMI.
-pub fn access_specifier(input: &str) -> IResult<&str, &str> {
+fn access_specifier(input: &str) -> IResult<&str, &str> {
     tok(alt((
         tag("accessible-for-notify"),
         tag("not-accessible"),
@@ -87,7 +87,7 @@ pub fn access_specifier(input: &str) -> IResult<&str, &str> {
 ///
 /// Order and structure is not preserved; the parsed result contains a hash with a key for each
 /// imported name, and associated value the name of the module from which it was imported.
-pub fn imports(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn imports(input: &str) -> IResult<&str, ModuleDecl> {
     let import = map(
         separated_pair(
             separated_list1(sym(","), identifier),
@@ -118,7 +118,7 @@ pub fn imports(input: &str) -> IResult<&str, ModuleDecl> {
 /// Parse and discard an `EXPORTS` stanza.
 ///
 /// Successful parse always produces a `ModuleDecl::Irrelevant`.
-pub fn exports(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn exports(input: &str) -> IResult<&str, ModuleDecl> {
     value(
         ModuleDecl::Irrelevant,
         delimited(
@@ -130,7 +130,7 @@ pub fn exports(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse a `MODULE-IDENTITY` macro.
-pub fn module_identity(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn module_identity(input: &str) -> IResult<&str, ModuleDecl> {
     let revision = tuple((kw("REVISION"), quoted_string, macro_description));
 
     map(
@@ -150,7 +150,7 @@ pub fn module_identity(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse a `TEXTUAL-CONVENTION` macro.
-pub fn textual_convention(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn textual_convention(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
@@ -167,7 +167,7 @@ pub fn textual_convention(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse a plain OID definition (one defined in ASN.1 without an SMI macro).
-pub fn plain_oid_def(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn plain_oid_def(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
@@ -181,14 +181,14 @@ pub fn plain_oid_def(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse a plain type definition (one defined in ASN.1 without an SMI macro).
-pub fn plain_type_def(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn plain_type_def(input: &str) -> IResult<&str, ModuleDecl> {
     map(tuple((identifier, sym("::="), asn_type)), |t| {
         ModuleDecl::PlainTypeDef(t.0.to_string(), t.2)
     })(input)
 }
 
 /// Parse an `OBJECT-IDENTITY` macro.
-pub fn object_identity(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn object_identity(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
@@ -204,7 +204,7 @@ pub fn object_identity(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse an `OBJECT-TYPE` macro.
-pub fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
     let index = map(
         preceded(
             kw("INDEX"),
@@ -259,7 +259,7 @@ pub fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse a `NOTIFICATION-TYPE` macro.
-pub fn notification_type(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn notification_type(input: &str) -> IResult<&str, ModuleDecl> {
     let objects = separated_list1(sym(","), identifier);
     map(
         tuple((
@@ -289,7 +289,7 @@ pub fn notification_type(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse a `MODULE-COMPLIANCE` macro.
-pub fn module_compliance(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn module_compliance(input: &str) -> IResult<&str, ModuleDecl> {
     let mandatory_groups = preceded(
         kw("MANDATORY-GROUPS"),
         delimited(sym("{"), separated_list1(sym(","), identifier), sym("}")),
@@ -336,7 +336,7 @@ pub fn module_compliance(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse an `OBJECT-GROUP` macro.
-pub fn object_group(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn object_group(input: &str) -> IResult<&str, ModuleDecl> {
     let objects = preceded(
         kw("OBJECTS"),
         delimited(sym("{"), separated_list1(sym(","), identifier), sym("}")),
@@ -363,7 +363,7 @@ pub fn object_group(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse a `NOTIFICATION-GROUP` macro.
-pub fn notification_group(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn notification_group(input: &str) -> IResult<&str, ModuleDecl> {
     let notifications = preceded(
         kw("NOTIFICATIONS"),
         delimited(sym("{"), separated_list1(sym(","), identifier), sym("}")),
@@ -393,7 +393,7 @@ pub fn notification_group(input: &str) -> IResult<&str, ModuleDecl> {
 ///
 /// The name is returned but the body is thrown away, as the grammars for SMI macros are all
 /// hard-coded in this parser.
-pub fn macro_def(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn macro_def(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
@@ -407,7 +407,7 @@ pub fn macro_def(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse an `AGENT-CAPABILITIES` macro.
-pub fn agent_capabilities(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn agent_capabilities(input: &str) -> IResult<&str, ModuleDecl> {
     let identifier_list = || separated_list1(sym(","), identifier);
     let variation = tuple((
         preceded(kw("VARIATION"), identifier),
@@ -446,7 +446,7 @@ pub fn agent_capabilities(input: &str) -> IResult<&str, ModuleDecl> {
 }
 
 /// Parse a `TRAP-TYPE` macro.
-pub fn trap_type(input: &str) -> IResult<&str, ModuleDecl> {
+pub(crate) fn trap_type(input: &str) -> IResult<&str, ModuleDecl> {
     let identifier_list = || separated_list1(sym(","), identifier);
     map(
         tuple((

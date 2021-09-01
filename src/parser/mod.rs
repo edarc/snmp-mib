@@ -26,7 +26,7 @@ use smallvec::SmallVec;
 /// This is like an OidExpr except the root identifier's module name is unresolved. Resolution
 /// happens in the `Loader`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RawOidExpr {
+pub(crate) struct RawOidExpr {
     parent: String,
     fragment: SmallVec<[u32; 1]>,
 }
@@ -35,7 +35,7 @@ impl RawOidExpr {
     /// Convert this `RawOidExpr` into an `OidExpr` by qualifying the parent identifier. The
     /// provided function should return a qualified `Identifier` given the unqualified identifier
     /// as a &str.
-    pub fn qualify(self, resolve: impl Fn(String) -> Identifier) -> OidExpr {
+    pub(crate) fn qualify(self, resolve: impl Fn(String) -> Identifier) -> OidExpr {
         let name = resolve(self.parent);
         OidExpr {
             parent: name,
@@ -47,7 +47,7 @@ impl RawOidExpr {
 /// The various kinds of declarations that occur in a MIB module. A parsed MIB module is
 /// essentially a sequence of these.
 #[derive(Clone, Debug)]
-pub enum ModuleDecl {
+pub(crate) enum ModuleDecl {
     AgentCapabilities(String, RawOidExpr),
     Imports(HashMap<String, String>),
     MacroDef(String),
@@ -65,19 +65,19 @@ pub enum ModuleDecl {
 }
 
 #[derive(Clone, Debug)]
-pub struct ObjectTypeDetails {
-    pub unit_of_measure: Option<String>,
-    pub indexing: Option<TableIndexing>,
+pub(crate) struct ObjectTypeDetails {
+    pub(crate) unit_of_measure: Option<String>,
+    pub(crate) indexing: Option<TableIndexing>,
 }
 
 #[derive(Clone, Debug)]
-pub enum TableIndexing {
+pub(crate) enum TableIndexing {
     Index(Vec<(String, bool)>),
     Augments(String),
 }
 
 impl ModuleDecl {
-    pub fn is_imports(&self) -> bool {
+    pub(crate) fn is_imports(&self) -> bool {
         match self {
             ModuleDecl::Imports(_) => true,
             _ => false,
@@ -88,12 +88,12 @@ impl ModuleDecl {
 /// This is the result of the parser, consisting of the module name and a sequence of
 /// `ModuleDecl`s.
 #[derive(Clone, Debug)]
-pub struct ParsedModule(pub String, pub Vec<ModuleDecl>);
+pub(crate) struct ParsedModule(pub(crate) String, pub(crate) Vec<ModuleDecl>);
 
 /// Parse a MIB module.
 ///
 /// This is the main entry point for the parser module.
-pub fn parse_module(data: &str) -> IResult<&str, ParsedModule> {
+pub(crate) fn parse_module(data: &str) -> IResult<&str, ParsedModule> {
     let module_decls = many0(alt((
         decls::agent_capabilities,
         decls::exports,

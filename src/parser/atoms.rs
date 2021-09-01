@@ -13,7 +13,7 @@ use nom::{
 use num::Num;
 
 /// Parse whitespace or comments and throw them away. Does *not* match zero length.
-pub fn ws_or_comment(input: &str) -> IResult<&str, ()> {
+pub(crate) fn ws_or_comment(input: &str) -> IResult<&str, ()> {
     let white = || value((), multispace1);
     let comment = || value((), pair(tag("--"), not_line_ending));
     value((), alt((comment(), white())))(input)
@@ -39,7 +39,7 @@ where
     terminated(inner, del)
 }
 
-pub fn kw(word: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
+pub(crate) fn kw(word: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
     move |input| tok(tag(word))(input)
 }
 
@@ -66,7 +66,7 @@ pub(crate) fn identifier(input: &str) -> IResult<&str, &str> {
     )))(input)
 }
 
-pub fn sym(sym: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
+pub(crate) fn sym(sym: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
     move |input| ptok(tag(sym))(input)
 }
 
@@ -74,7 +74,7 @@ pub fn sym(sym: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
 ///
 /// String may potentially span many lines, as is common in MIB definitions. Does not currently
 /// support escaped close-quote.
-pub fn quoted_string(input: &str) -> IResult<&str, &str> {
+pub(crate) fn quoted_string(input: &str) -> IResult<&str, &str> {
     delimited(
         tag("\""),
         map(opt(is_not("\"")), |s| s.unwrap_or("")),
@@ -82,7 +82,7 @@ pub fn quoted_string(input: &str) -> IResult<&str, &str> {
     )(input)
 }
 
-pub fn signed<T>(input: &str) -> IResult<&str, T>
+pub(crate) fn signed<T>(input: &str) -> IResult<&str, T>
 where
     T: Num,
 {
@@ -90,7 +90,7 @@ where
     alt((map_opt(dec, |t| T::from_str_radix(t, 10).ok()), unsigned))(input)
 }
 
-pub fn unsigned<T>(input: &str) -> IResult<&str, T>
+pub(crate) fn unsigned<T>(input: &str) -> IResult<&str, T>
 where
     T: Num,
 {

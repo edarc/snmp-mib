@@ -13,22 +13,22 @@ use crate::types::identifier::Identifier;
 use crate::types::numeric_oid::NumericOid;
 use crate::types::oid_expr::OidExpr;
 
-pub struct Linker {
-    pub numeric_oid_names: SequenceTrie<u32, Identifier>,
-    pub object_indexes: BTreeMap<Identifier, TableIndexing>,
-    pub object_numeric_oids: BTreeMap<Identifier, NumericOid>,
-    pub object_oidexpr_defs: BTreeMap<Identifier, OidExpr>,
-    pub object_uoms: BTreeMap<Identifier, String>,
-    pub orphan_identifiers: BTreeSet<Identifier>,
-    pub type_defs: BTreeMap<Identifier, Type<Identifier>>,
+pub(crate) struct Linker {
+    numeric_oid_names: SequenceTrie<u32, Identifier>,
+    object_indexes: BTreeMap<Identifier, TableIndexing>,
+    pub(crate) object_numeric_oids: BTreeMap<Identifier, NumericOid>,
+    object_oidexpr_defs: BTreeMap<Identifier, OidExpr>,
+    object_uoms: BTreeMap<Identifier, String>,
+    orphan_identifiers: BTreeSet<Identifier>,
+    type_defs: BTreeMap<Identifier, Type<Identifier>>,
     type_interpretation_cache: RefCell<BTreeMap<Identifier, SMIInterpretation>>,
 }
 
 #[derive(Clone, Debug)]
-pub struct InternalObjectDescriptor {
-    pub name: Identifier,
-    pub declared_type: Option<Type<Identifier>>,
-    pub smi_interpretation: SMIInterpretation,
+pub(crate) struct InternalObjectDescriptor {
+    pub(crate) name: Identifier,
+    pub(crate) declared_type: Option<Type<Identifier>>,
+    pub(crate) smi_interpretation: SMIInterpretation,
 }
 
 impl Linker {
@@ -55,7 +55,7 @@ impl Linker {
         }
     }
 
-    pub fn new<'a>(decls: impl IntoIterator<Item = QualifiedDecl>) -> Self {
+    pub(crate) fn new<'a>(decls: impl IntoIterator<Item = QualifiedDecl>) -> Self {
         use QualifiedDecl as QD;
 
         let mut new = Self::new_empty();
@@ -176,7 +176,7 @@ impl Linker {
         Ok(linked_def.fragment.to_vec().into())
     }
 
-    pub fn make_entry(&self, name: &Identifier) -> InternalObjectDescriptor {
+    pub(crate) fn make_entry(&self, name: &Identifier) -> InternalObjectDescriptor {
         let num_oid = self.object_numeric_oids.get(name);
         let declared_type = self.type_defs.get(&name);
 

@@ -110,7 +110,7 @@ pub enum InetAddress {
 }
 
 impl SMIScalar {
-    pub fn decode_from_num_oid(
+    pub(crate) fn decode_from_num_oid(
         &self,
         mut fragment_iter: impl Iterator<Item = u32>,
         _encoding: TableIndexEncoding,

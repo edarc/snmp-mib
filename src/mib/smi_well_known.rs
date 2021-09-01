@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use lazy_static::lazy_static;
 
 #[derive(Clone, Debug, Copy)]
-pub enum SMIWellKnown {
+pub(crate) enum SMIWellKnown {
     Counter,
     Counter32,
     Counter64,
@@ -20,7 +20,7 @@ pub enum SMIWellKnown {
 }
 
 lazy_static! {
-    pub static ref SMI_WELL_KNOWN_TYPES: HashMap<&'static str, SMIWellKnown> = [
+    pub(crate) static ref SMI_WELL_KNOWN_TYPES: HashMap<&'static str, SMIWellKnown> = [
         // RFCs 1155, 2578
         ("Counter", SMIWellKnown::Counter),
         ("Counter32", SMIWellKnown::Counter32),

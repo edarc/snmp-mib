@@ -9,7 +9,7 @@ use crate::types::oid_expr::OidExpr;
 
 /// A `ModuleDecl` from the parser, but with all identifiers fully qualified from imports.
 #[derive(Clone, Debug)]
-pub enum QualifiedDecl {
+pub(crate) enum QualifiedDecl {
     AgentCapabilities(Identifier, OidExpr),
     MacroDef(Identifier),
     ModuleCompliance(Identifier, OidExpr),
@@ -26,13 +26,13 @@ pub enum QualifiedDecl {
 }
 
 #[derive(Clone, Debug)]
-pub struct ObjectTypeDetails {
-    pub unit_of_measure: Option<String>,
-    pub indexing: Option<TableIndexing>,
+pub(crate) struct ObjectTypeDetails {
+    pub(crate) unit_of_measure: Option<String>,
+    pub(crate) indexing: Option<TableIndexing>,
 }
 
 #[derive(Clone, Debug)]
-pub enum TableIndexing {
+pub(crate) enum TableIndexing {
     Index(Vec<(Identifier, bool)>),
     Augments(Identifier),
 }
@@ -179,7 +179,7 @@ impl QualifiedDecl {
 /// Loader loads MIB modules from multiple files and resolves all identifiers to fully-qualified
 /// ones.
 #[derive(Clone, Debug)]
-pub struct Loader(pub Vec<QualifiedDecl>);
+pub struct Loader(pub(crate) Vec<QualifiedDecl>);
 
 impl Loader {
     pub fn new() -> Self {

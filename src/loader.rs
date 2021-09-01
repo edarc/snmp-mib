@@ -4,8 +4,7 @@ use std::path::Path;
 
 use crate::parser::asn_type::{BuiltinType, PlainType, Type};
 use crate::parser::{parse_module, ModuleDecl, ParsedModule};
-use crate::types::identifier::Identifier;
-use crate::types::oid_expr::OidExpr;
+use crate::types::{Identifier, OidExpr};
 
 /// A `ModuleDecl` from the parser, but with all identifiers fully qualified from imports.
 #[derive(Clone, Debug)]

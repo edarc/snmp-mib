@@ -5,10 +5,7 @@ use std::fmt::Debug;
 use num::BigInt;
 
 use crate::mib::smi_well_known::SMIWellKnown;
-use crate::types::identified_obj::IdentifiedObj;
-use crate::types::identifier::Identifier;
-use crate::types::numeric_oid::NumericOid;
-use crate::types::oid_expr::{IntoOidExpr, OidExpr};
+use crate::types::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SMIInterpretation {

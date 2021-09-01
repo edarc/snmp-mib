@@ -11,8 +11,7 @@ use std::collections::HashMap;
 
 use crate::parser::asn_type::Type;
 use crate::parser::atoms::{identifier, ptok, tok, ws_or_comment};
-use crate::types::identifier::Identifier;
-use crate::types::oid_expr::OidExpr;
+use crate::types::{Identifier, OidExpr};
 
 use nom::{
     branch::alt,

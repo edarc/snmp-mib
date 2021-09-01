@@ -7,8 +7,11 @@ use sequence_trie::SequenceTrie;
 use crate::loader::{QualifiedDecl, TableIndexing};
 use crate::mib::interpretation::{SMIInterpretation, SMIScalar, SMITable};
 use crate::mib::smi_well_known::{SMIWellKnown, SMI_WELL_KNOWN_TYPES};
-use crate::parser::{BuiltinType, PlainType, Type};
-use crate::{IdentifiedObj, Identifier, NumericOid, OidExpr};
+use crate::parser::asn_type::{BuiltinType, PlainType, Type};
+use crate::types::identified_obj::IdentifiedObj;
+use crate::types::identifier::Identifier;
+use crate::types::numeric_oid::NumericOid;
+use crate::types::oid_expr::OidExpr;
 
 pub struct Linker {
     pub numeric_oid_names: SequenceTrie<u32, Identifier>,

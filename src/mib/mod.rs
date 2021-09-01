@@ -10,8 +10,11 @@ use sequence_trie::SequenceTrie;
 use crate::loader::Loader;
 use crate::mib::interpretation::{SMIInterpretation, SMITableCell, TableIndexVal};
 use crate::mib::linker::{InternalObjectDescriptor, Linker};
-use crate::parser::Type;
-use crate::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
+use crate::parser::asn_type::Type;
+use crate::types::identified_obj::IdentifiedObj;
+use crate::types::identifier::Identifier;
+use crate::types::numeric_oid::NumericOid;
+use crate::types::oid_expr::{IntoOidExpr, OidExpr};
 
 #[derive(Clone, Debug)]
 pub struct ObjectDescriptor {

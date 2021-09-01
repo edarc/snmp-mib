@@ -3,13 +3,13 @@
 //! The main API surface consists of `ModuleDecl` and `parse_module`, where the latter parses a MIB
 //! module into a sequence of the former.
 
-mod asn_type;
+pub mod asn_type;
 
 use std::collections::HashMap;
 
-use self::asn_type::asn_type;
-pub use self::asn_type::{BuiltinType, PlainType, Type};
-use crate::{Identifier, OidExpr};
+use crate::parser::asn_type::{asn_type, Type};
+use crate::types::identifier::Identifier;
+use crate::types::oid_expr::OidExpr;
 
 use nom::{
     branch::alt,

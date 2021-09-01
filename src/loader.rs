@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
 
-use crate::parser::{parse_module, BuiltinType, ModuleDecl, ParsedModule, PlainType, Type};
-use crate::{Identifier, OidExpr};
+use crate::parser::asn_type::{BuiltinType, PlainType, Type};
+use crate::parser::{parse_module, ModuleDecl, ParsedModule};
+use crate::types::identifier::Identifier;
+use crate::types::oid_expr::OidExpr;
 
 /// A `ModuleDecl` from the parser, but with all identifiers fully qualified from imports.
 #[derive(Clone, Debug)]

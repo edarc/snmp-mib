@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use crate::parser::asn_type::asn_type;
-use crate::parser::atoms::{identifier, ptok, quoted_string, tok};
+use crate::parser::atoms::{identifier, kw, quoted_string, sym, tok, unsigned};
 use crate::parser::{ModuleDecl, ObjectTypeDetails, RawOidExpr, TableIndexing};
 
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
-    character::complete::{digit1, not_line_ending},
+    character::complete::not_line_ending,
     combinator::{map, not, opt, value},
     multi::{many0, many1, many_till, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
@@ -19,18 +19,13 @@ use nom::{
 /// This requires that every entry in the definition except the first either be a plain integer, or
 /// a name with an associated integer like `dod(2)`.
 pub fn oid_expr(input: &str) -> IResult<&str, RawOidExpr> {
-    let num = || map(digit1, |v: &str| v.parse::<u32>().unwrap());
     let oid_elem = alt((
-        num(),
-        delimited(pair(identifier, tag("(")), num(), tag(")")),
+        unsigned,
+        delimited(pair(identifier, sym("(")), unsigned, sym(")")),
     ));
 
     map(
-        delimited(
-            ptok(tag("{")),
-            pair(opt(identifier), many0(tok(oid_elem))),
-            ptok(tag("}")),
-        ),
+        delimited(sym("{"), pair(opt(identifier), many0(oid_elem)), sym("}")),
         |(name, frag)| RawOidExpr {
             parent: name.unwrap_or("").to_string(),
             fragment: frag.into(),
@@ -41,7 +36,7 @@ pub fn oid_expr(input: &str) -> IResult<&str, RawOidExpr> {
 /// Parse a `STATUS` stanza in an SMI macro.
 pub fn macro_status(input: &str) -> IResult<&str, &str> {
     preceded(
-        tok(tag("STATUS")),
+        kw("STATUS"),
         tok(alt((
             tag("mandatory"),
             tag("optional"),
@@ -54,25 +49,22 @@ pub fn macro_status(input: &str) -> IResult<&str, &str> {
 
 /// Parse a `DESCRIPTION` stanza in an SMI macro.
 pub fn macro_description(input: &str) -> IResult<&str, &str> {
-    preceded(tok(tag("DESCRIPTION")), quoted_string)(input)
+    preceded(kw("DESCRIPTION"), quoted_string)(input)
 }
 
 /// Parse a `REFERENCE` stanza in an SMI macro.
 pub fn macro_reference(input: &str) -> IResult<&str, Option<&str>> {
-    opt(preceded(tok(tag("REFERENCE")), quoted_string))(input)
+    opt(preceded(kw("REFERENCE"), quoted_string))(input)
 }
 
 /// Parse a `DEFVAL` stanza in an SMI macro.
 pub fn macro_defval(input: &str) -> IResult<&str, &str> {
     let defval_val = alt((
-        delimited(ptok(tag("{")), is_not("}"), ptok(tag("}"))),
-        value("", pair(ptok(tag("{")), ptok(tag("}")))),
+        delimited(sym("{"), is_not("}"), sym("}")),
+        value("", pair(sym("{"), sym("}"))),
         is_not("}"),
     ));
-    preceded(
-        tok(tag("DEFVAL")),
-        delimited(ptok(tag("{")), defval_val, ptok(tag("}"))),
-    )(input)
+    preceded(kw("DEFVAL"), delimited(sym("{"), defval_val, sym("}")))(input)
 }
 
 /// Parse an access specifier.
@@ -98,8 +90,8 @@ pub fn access_specifier(input: &str) -> IResult<&str, &str> {
 pub fn imports(input: &str) -> IResult<&str, ModuleDecl> {
     let import = map(
         separated_pair(
-            separated_list1(ptok(tag(",")), identifier),
-            tok(tag("FROM")),
+            separated_list1(sym(","), identifier),
+            kw("FROM"),
             identifier,
         ),
         |(names, source_module)| {
@@ -111,7 +103,7 @@ pub fn imports(input: &str) -> IResult<&str, ModuleDecl> {
     );
 
     map(
-        delimited(tok(tag("IMPORTS")), many1(import), opt(tok(tag(";")))),
+        delimited(kw("IMPORTS"), many1(import), opt(sym(";"))),
         |many| {
             let imported_names = many
                 .into_iter()
@@ -130,27 +122,27 @@ pub fn exports(input: &str) -> IResult<&str, ModuleDecl> {
     value(
         ModuleDecl::Irrelevant,
         delimited(
-            tok(tag("EXPORTS")),
-            separated_list1(tok(tag(",")), identifier),
-            tok(tag(";")),
+            kw("EXPORTS"),
+            separated_list1(sym(","), identifier),
+            sym(";"),
         ),
     )(input)
 }
 
 /// Parse a `MODULE-IDENTITY` macro.
 pub fn module_identity(input: &str) -> IResult<&str, ModuleDecl> {
-    let revision = tuple((tok(tag("REVISION")), quoted_string, macro_description));
+    let revision = tuple((kw("REVISION"), quoted_string, macro_description));
 
     map(
         tuple((
             identifier,
-            tok(tag("MODULE-IDENTITY")),
-            preceded(tok(tag("LAST-UPDATED")), quoted_string),
-            preceded(tok(tag("ORGANIZATION")), quoted_string),
-            preceded(tok(tag("CONTACT-INFO")), quoted_string),
+            kw("MODULE-IDENTITY"),
+            preceded(kw("LAST-UPDATED"), quoted_string),
+            preceded(kw("ORGANIZATION"), quoted_string),
+            preceded(kw("CONTACT-INFO"), quoted_string),
             macro_description,
             many0(revision),
-            ptok(tag("::=")),
+            sym("::="),
             oid_expr,
         )),
         |t| ModuleDecl::ModuleIdentity(t.0.to_string(), t.8),
@@ -162,13 +154,13 @@ pub fn textual_convention(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
-            ptok(tag("::=")),
-            tok(tag("TEXTUAL-CONVENTION")),
-            opt(preceded(tok(tag("DISPLAY-HINT")), quoted_string)),
+            sym("::="),
+            kw("TEXTUAL-CONVENTION"),
+            opt(preceded(kw("DISPLAY-HINT"), quoted_string)),
             macro_status,
             macro_description,
             macro_reference,
-            preceded(tok(tag("SYNTAX")), asn_type),
+            preceded(kw("SYNTAX"), asn_type),
         )),
         |t| ModuleDecl::TextualConvention(t.0.to_string(), t.7),
     )(input)
@@ -179,9 +171,9 @@ pub fn plain_oid_def(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
-            tok(tag("OBJECT")),
-            tok(tag("IDENTIFIER")),
-            ptok(tag("::=")),
+            kw("OBJECT"),
+            kw("IDENTIFIER"),
+            sym("::="),
             oid_expr,
         )),
         |t| ModuleDecl::PlainOidDef(t.0.to_string(), t.4),
@@ -190,7 +182,7 @@ pub fn plain_oid_def(input: &str) -> IResult<&str, ModuleDecl> {
 
 /// Parse a plain type definition (one defined in ASN.1 without an SMI macro).
 pub fn plain_type_def(input: &str) -> IResult<&str, ModuleDecl> {
-    map(tuple((identifier, ptok(tag("::=")), asn_type)), |t| {
+    map(tuple((identifier, sym("::="), asn_type)), |t| {
         ModuleDecl::PlainTypeDef(t.0.to_string(), t.2)
     })(input)
 }
@@ -200,11 +192,11 @@ pub fn object_identity(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
-            tok(tag("OBJECT-IDENTITY")),
+            kw("OBJECT-IDENTITY"),
             macro_status,
             macro_description,
             macro_reference,
-            ptok(tag("::=")),
+            sym("::="),
             oid_expr,
         )),
         |t| ModuleDecl::ObjectIdentity(t.0.to_string(), t.6),
@@ -215,11 +207,11 @@ pub fn object_identity(input: &str) -> IResult<&str, ModuleDecl> {
 pub fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
     let index = map(
         preceded(
-            tok(tag("INDEX")),
+            kw("INDEX"),
             delimited(
-                ptok(tag("{")),
-                separated_list1(ptok(tag(",")), pair(opt(tok(tag("IMPLIED"))), identifier)),
-                ptok(tag("}")),
+                sym("{"),
+                separated_list1(sym(","), pair(opt(kw("IMPLIED")), identifier)),
+                sym("}"),
             ),
         ),
         |cols| {
@@ -231,18 +223,15 @@ pub fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
         },
     );
     let augments = map(
-        preceded(
-            tok(tag("AUGMENTS")),
-            delimited(ptok(tag("{")), identifier, ptok(tag("}"))),
-        ),
+        preceded(kw("AUGMENTS"), delimited(sym("{"), identifier, sym("}"))),
         |id| TableIndexing::Augments(id.to_string()),
     );
     map(
         tuple((
             identifier,
-            tok(tag("OBJECT-TYPE")),
-            preceded(tok(tag("SYNTAX")), asn_type),
-            opt(preceded(tok(tag("UNITS")), quoted_string)),
+            kw("OBJECT-TYPE"),
+            preceded(kw("SYNTAX"), asn_type),
+            opt(preceded(kw("UNITS"), quoted_string)),
             preceded(
                 tok(alt((tag("MAX-ACCESS"), tag("ACCESS")))),
                 access_specifier,
@@ -252,7 +241,7 @@ pub fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
             macro_reference,
             opt(alt((index, augments))),
             opt(macro_defval),
-            ptok(tag("::=")),
+            sym("::="),
             oid_expr,
         )),
         |t| {
@@ -271,19 +260,19 @@ pub fn object_type(input: &str) -> IResult<&str, ModuleDecl> {
 
 /// Parse a `NOTIFICATION-TYPE` macro.
 pub fn notification_type(input: &str) -> IResult<&str, ModuleDecl> {
-    let objects = separated_list1(tok(tag(",")), identifier);
+    let objects = separated_list1(sym(","), identifier);
     map(
         tuple((
             identifier,
-            tok(tag("NOTIFICATION-TYPE")),
+            kw("NOTIFICATION-TYPE"),
             opt(preceded(
-                tok(tag("OBJECTS")),
-                delimited(ptok(tag("{")), objects, ptok(tag("}"))),
+                kw("OBJECTS"),
+                delimited(sym("{"), objects, sym("}")),
             )),
             macro_status,
             macro_description,
             macro_reference,
-            ptok(tag("::=")),
+            sym("::="),
             oid_expr,
         )),
         |t| {
@@ -302,22 +291,18 @@ pub fn notification_type(input: &str) -> IResult<&str, ModuleDecl> {
 /// Parse a `MODULE-COMPLIANCE` macro.
 pub fn module_compliance(input: &str) -> IResult<&str, ModuleDecl> {
     let mandatory_groups = preceded(
-        tok(tag("MANDATORY-GROUPS")),
-        delimited(
-            ptok(tag("{")),
-            separated_list1(ptok(tag(",")), identifier),
-            ptok(tag("}")),
-        ),
+        kw("MANDATORY-GROUPS"),
+        delimited(sym("{"), separated_list1(sym(","), identifier), sym("}")),
     );
-    let compliance_group = preceded(tok(tag("GROUP")), terminated(identifier, macro_description));
+    let compliance_group = preceded(kw("GROUP"), terminated(identifier, macro_description));
     let compliance_object = preceded(
-        tok(tag("OBJECT")),
+        kw("OBJECT"),
         terminated(
             identifier,
             tuple((
-                opt(preceded(tok(tag("SYNTAX")), asn_type)),
-                opt(preceded(tok(tag("WRITE-SYNTAX")), asn_type)),
-                opt(preceded(tok(tag("MIN-ACCESS")), access_specifier)),
+                opt(preceded(kw("SYNTAX"), asn_type)),
+                opt(preceded(kw("WRITE-SYNTAX"), asn_type)),
+                opt(preceded(kw("MIN-ACCESS"), access_specifier)),
                 macro_description,
             )),
         ),
@@ -325,7 +310,7 @@ pub fn module_compliance(input: &str) -> IResult<&str, ModuleDecl> {
     let compliances = many1(alt((compliance_group, compliance_object)));
     let modules = many0(tuple((
         preceded(
-            tok(tag("MODULE")),
+            kw("MODULE"),
             opt(pair(
                 not(alt((tag("MANDATORY-GROUPS"), tag("OBJECT"), tag("GROUP")))),
                 identifier,
@@ -338,12 +323,12 @@ pub fn module_compliance(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
-            tok(tag("MODULE-COMPLIANCE")),
+            kw("MODULE-COMPLIANCE"),
             macro_status,
             macro_description,
             macro_reference,
             modules,
-            ptok(tag("::=")),
+            sym("::="),
             oid_expr,
         )),
         |t| ModuleDecl::ModuleCompliance(t.0.to_string(), t.7),
@@ -353,22 +338,18 @@ pub fn module_compliance(input: &str) -> IResult<&str, ModuleDecl> {
 /// Parse an `OBJECT-GROUP` macro.
 pub fn object_group(input: &str) -> IResult<&str, ModuleDecl> {
     let objects = preceded(
-        tok(tag("OBJECTS")),
-        delimited(
-            ptok(tag("{")),
-            separated_list1(ptok(tag(",")), identifier),
-            ptok(tag("}")),
-        ),
+        kw("OBJECTS"),
+        delimited(sym("{"), separated_list1(sym(","), identifier), sym("}")),
     );
     map(
         tuple((
             identifier,
-            tok(tag("OBJECT-GROUP")),
+            kw("OBJECT-GROUP"),
             objects,
             macro_status,
             macro_description,
             macro_reference,
-            ptok(tag("::=")),
+            sym("::="),
             oid_expr,
         )),
         |t| {
@@ -384,22 +365,18 @@ pub fn object_group(input: &str) -> IResult<&str, ModuleDecl> {
 /// Parse a `NOTIFICATION-GROUP` macro.
 pub fn notification_group(input: &str) -> IResult<&str, ModuleDecl> {
     let notifications = preceded(
-        tok(tag("NOTIFICATIONS")),
-        delimited(
-            ptok(tag("{")),
-            separated_list1(tok(tag(",")), identifier),
-            ptok(tag("}")),
-        ),
+        kw("NOTIFICATIONS"),
+        delimited(sym("{"), separated_list1(sym(","), identifier), sym("}")),
     );
     map(
         tuple((
             identifier,
-            tok(tag("NOTIFICATION-GROUP")),
+            kw("NOTIFICATION-GROUP"),
             notifications,
             macro_status,
             macro_description,
             macro_reference,
-            ptok(tag("::=")),
+            sym("::="),
             oid_expr,
         )),
         |t| {
@@ -420,10 +397,10 @@ pub fn macro_def(input: &str) -> IResult<&str, ModuleDecl> {
     map(
         tuple((
             identifier,
-            tok(tag("MACRO")),
-            ptok(tag("::=")),
-            tok(tag("BEGIN")),
-            many_till(tok(not_line_ending), tok(tag("END"))),
+            kw("MACRO"),
+            sym("::="),
+            kw("BEGIN"),
+            many_till(tok(not_line_ending), kw("END")),
         )),
         |t| ModuleDecl::MacroDef(t.0.to_string()),
     )(input)
@@ -431,37 +408,37 @@ pub fn macro_def(input: &str) -> IResult<&str, ModuleDecl> {
 
 /// Parse an `AGENT-CAPABILITIES` macro.
 pub fn agent_capabilities(input: &str) -> IResult<&str, ModuleDecl> {
-    let identifier_list = || separated_list1(ptok(tag(",")), identifier);
+    let identifier_list = || separated_list1(sym(","), identifier);
     let variation = tuple((
-        preceded(tok(tag("VARIATION")), identifier),
-        opt(preceded(tok(tag("SYNTAX")), asn_type)),
-        opt(preceded(tok(tag("WRITE-SYNTAX")), asn_type)),
-        opt(preceded(tok(tag("ACCESS")), access_specifier)),
+        preceded(kw("VARIATION"), identifier),
+        opt(preceded(kw("SYNTAX"), asn_type)),
+        opt(preceded(kw("WRITE-SYNTAX"), asn_type)),
+        opt(preceded(kw("ACCESS"), access_specifier)),
         opt(preceded(
-            tok(tag("CREATION-REQUIRES")),
-            delimited(ptok(tag("{")), identifier_list(), ptok(tag("}"))),
+            kw("CREATION-REQUIRES"),
+            delimited(sym("{"), identifier_list(), sym("}")),
         )),
         opt(macro_defval),
         macro_description,
     ));
     let module = tuple((
-        preceded(tok(tag("SUPPORTS")), identifier),
+        preceded(kw("SUPPORTS"), identifier),
         preceded(
-            tok(tag("INCLUDES")),
-            delimited(ptok(tag("{")), identifier_list(), ptok(tag("}"))),
+            kw("INCLUDES"),
+            delimited(sym("{"), identifier_list(), sym("}")),
         ),
         many0(variation),
     ));
     map(
         tuple((
             identifier,
-            tok(tag("AGENT-CAPABILITIES")),
-            preceded(tok(tag("PRODUCT-RELEASE")), quoted_string),
+            kw("AGENT-CAPABILITIES"),
+            preceded(kw("PRODUCT-RELEASE"), quoted_string),
             macro_status,
             macro_description,
             macro_reference,
             many0(module),
-            ptok(tag("::=")),
+            sym("::="),
             oid_expr,
         )),
         |t| ModuleDecl::AgentCapabilities(t.0.to_string(), t.8),
@@ -470,21 +447,63 @@ pub fn agent_capabilities(input: &str) -> IResult<&str, ModuleDecl> {
 
 /// Parse a `TRAP-TYPE` macro.
 pub fn trap_type(input: &str) -> IResult<&str, ModuleDecl> {
-    let identifier_list = || separated_list1(ptok(tag(",")), identifier);
+    let identifier_list = || separated_list1(sym(","), identifier);
     map(
         tuple((
             identifier,
-            tok(tag("TRAP-TYPE")),
-            preceded(tok(tag("ENTERPRISE")), identifier),
+            kw("TRAP-TYPE"),
+            preceded(kw("ENTERPRISE"), identifier),
             preceded(
-                tok(tag("VARIABLES")),
-                delimited(ptok(tag("{")), identifier_list(), ptok(tag("}"))),
+                kw("VARIABLES"),
+                delimited(sym("{"), identifier_list(), sym("}")),
             ),
             macro_description,
             macro_reference,
-            ptok(tag("::=")),
-            tok(digit1),
+            sym("::="),
+            unsigned::<u32>,
         )),
         |_| ModuleDecl::Irrelevant,
     )(input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    //use crate::parser::{ModuleDecl, ObjectTypeDetails, RawOidExpr, TableIndexing};
+
+    macro_rules! parse_ok {
+        ($parser:expr, $case:literal, $val:expr) => {
+            assert_eq!($parser($case), Ok(("", $val)))
+        };
+    }
+
+    #[test]
+    fn oid_expression() {
+        parse_ok!(
+            oid_expr,
+            "{ bonk 0 1 }",
+            RawOidExpr {
+                parent: "bonk".to_string(),
+                fragment: vec![0, 1].into()
+            }
+        );
+
+        parse_ok!(
+            oid_expr,
+            "{ 424 0 1 }",
+            RawOidExpr {
+                parent: "".to_string(),
+                fragment: vec![424, 0, 1].into()
+            }
+        );
+
+        parse_ok!(
+            oid_expr,
+            "{ iso foo(42) bar(7) 6 }",
+            RawOidExpr {
+                parent: "iso".to_string(),
+                fragment: vec![42, 7, 6].into()
+            }
+        );
+    }
 }

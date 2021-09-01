@@ -25,7 +25,7 @@ use smallvec::SmallVec;
 
 /// This is like an OidExpr except the root identifier's module name is unresolved. Resolution
 /// happens in the `Loader`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RawOidExpr {
     parent: String,
     fragment: SmallVec<[u32; 1]>,

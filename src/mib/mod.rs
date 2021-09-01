@@ -4,7 +4,10 @@ mod interpretation;
 mod linker;
 mod smi_well_known;
 
-pub use crate::mib::interpretation::{SMIInterpretation, SMITableCell, TableIndexVal};
+pub use crate::mib::interpretation::{
+    InetAddress, SMIInterpretation, SMIScalar, SMITable, SMITableCell, TableIndexEncoding,
+    TableIndexVal,
+};
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -25,7 +28,7 @@ pub struct ObjectDescriptor {
     /// The object's OID, both as an identifier and numerically.
     ///
     /// This field allows an object to be described based on any OID expression, and this field
-    /// will contain both the canonical name and the numeric OID. 
+    /// will contain both the canonical name and the numeric OID.
     pub object: IdentifiedObj,
 
     /// The declared type of the object as an ASN.1 type, if it has one.

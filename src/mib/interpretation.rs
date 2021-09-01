@@ -7,16 +7,48 @@ use num::BigInt;
 use crate::mib::smi_well_known::SMIWellKnown;
 use crate::types::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
 
+/// Describes how an object should be interpreted in terms of an SMIv2 logical model.
+///
+/// In the case of this crate, the SMI model is composed of a few kinds of things: namespaces,
+/// scalars, tables, table rows, and table cells. Other kinds of things may exist in the MIB module
+/// declaration which either don't have an SMI interpretation or aren't (yet) supported by this
+/// crate; these are `Unknown`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SMIInterpretation {
+    /// The object is interpretable as an OID namespace. The data member is a set of
+    /// [`IdentifiedObj`] values which are the immediate children of the namespace.
     Namespace(BTreeSet<IdentifiedObj>),
+
+    /// The object is interpretable as a scalar value. The [`SMIScalar`] data member describes the
+    /// scalar value's type in more detail.
     Scalar(SMIScalar),
+
+    /// The object is interpretable as a table. The [`SMITable`] data member describes the table's
+    /// schema in more detail, including row type, columns, and indexing.
     Table(SMITable),
+
+    /// The object is interpretable as a table row. The [`SMITable`] data member describes the
+    /// row's parent table (i.e. it is the same data you would obtain in the `Table` interpretation
+    /// of the parent table object).
     TableRow(SMITable),
+
+    /// The object is interpretable as a table cell. The [`SMITableCell`] data member describes the
+    /// interpretation of the scalar value in that cell, the table it is a member of, and the
+    /// values for the table indices decoded from the object's OID.
     TableCell(SMITableCell),
+
+    /// The object doesn't have an interpretation in SMI, or its interpretation is not (yet)
+    /// supported by this crate.
     Unknown,
 }
 
+/// Describes a SMI scalar value.
+///
+/// The actual declared type of the object is dereferenced and expanded as necessary until it is
+/// expressible in terms of a few either basic primitive ASN.1 types, or well-known SMI types,
+/// which are represented by variants here. In cases where several distinct well-known or primitive
+/// types are semantically identical but only differ by size or width, they are collapsed into one
+/// representative variant --- for example, there is only one `Integer` variant.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SMIScalar {
     Bits(HashMap<BigInt, String>),

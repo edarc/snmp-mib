@@ -4,18 +4,20 @@
 //! module into a sequence of the former.
 
 pub mod asn_type;
+pub mod atoms;
 
 use std::collections::HashMap;
 
 use crate::parser::asn_type::{asn_type, Type};
+use crate::parser::atoms::{identifier, ptok, quoted_string, tok, ws_or_comment};
 use crate::types::identifier::Identifier;
 use crate::types::oid_expr::OidExpr;
 
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
-    character::complete::{alpha1, alphanumeric1, digit1, multispace1, not_line_ending, one_of},
-    combinator::{eof, map, not, opt, peek, recognize, value},
+    character::complete::{digit1, not_line_ending},
+    combinator::{map, not, opt, value},
     multi::{many0, many1, many_till, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult,
@@ -88,56 +90,6 @@ impl ModuleDecl {
 /// `ModuleDecl`s.
 #[derive(Clone, Debug)]
 pub struct ParsedModule(pub String, pub Vec<ModuleDecl>);
-
-/// Parse whitespace or comments and throw them away. Does *not* match zero length.
-fn ws_or_comment(input: &str) -> IResult<&str, ()> {
-    let white = || value((), multispace1);
-    let comment = || value((), pair(tag("--"), not_line_ending));
-    value((), alt((comment(), white())))(input)
-}
-
-/// Wrap a punctuation parser to eat trailing whitespace.
-///
-/// The entire parser is written with the invariant that whitespace and comments are always
-/// stripped off the stream *after* each parsed item -- in other words, every parser leaves the
-/// remaining string starting with something that is *not* whitespace or comment.
-///
-/// This whitespace eater is used for punctuation instead of `tok` as it will accept zero-length
-/// whitespace or comments after the token.
-pub(crate) fn ptok<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, O>,
-{
-    terminated(inner, many0(ws_or_comment))
-}
-
-/// Wrap a non-punctuation parser to eat trailing whitespace.
-///
-/// The entire parser is written with the invariant that whitespace and comments are always
-/// stripped off the stream *after* each parsed item -- in other words, every parser leaves the
-/// remaining string starting with something that is *not* whitespace or comment.
-///
-/// This whitespace eater is used for non-punctuation instead of `ptok` as it requires either some
-/// amount of whitespace or comments (which it discards), or punctuation or EOF (which it does not
-/// consume) after the token. This prevents the problem of `ptok(tag("FOO"))` successfully matching
-/// `"FOObar"`, for example, when `FOO` is a keyword and `bar` is an identifier.
-pub(crate) fn tok<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, O>,
-{
-    let punc = value((), peek(one_of(".,;:()[]{}<>=|")));
-    let end = value((), eof);
-    let del = alt((value((), many1(ws_or_comment)), punc, end));
-    terminated(inner, del)
-}
-
-/// Parse a MIB identifier.
-pub(crate) fn identifier(input: &str) -> IResult<&str, &str> {
-    tok(recognize(pair(
-        alpha1,
-        many0(alt((alphanumeric1, tag("-")))),
-    )))(input)
-}
 
 /// Parse an OID expression.
 ///
@@ -214,18 +166,6 @@ fn access_specifier(input: &str) -> IResult<&str, &str> {
         tag("read-only"),
         tag("read-write"),
     )))(input)
-}
-
-/// Parse a double-quoted string.
-///
-/// String may potentially span many lines, as is common in MIB definitions. Does not currently
-/// support escaped close-quote.
-fn quoted_string(input: &str) -> IResult<&str, &str> {
-    delimited(
-        tag("\""),
-        map(opt(is_not("\"")), |s| s.unwrap_or("")),
-        tok(tag("\"")),
-    )(input)
 }
 
 /// Parse an `IMPORTS` stanza.

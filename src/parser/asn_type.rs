@@ -6,24 +6,16 @@
 
 use std::collections::HashMap;
 
-use num::{bigint::ToBigInt, integer::Integer, BigInt, Num};
-
-#[allow(unused_imports)]
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, tag},
-    character::complete::{
-        alpha1, alphanumeric1, char as the_char, digit1, hex_digit1, multispace0, multispace1,
-        not_line_ending, one_of,
-    },
-    combinator::{eof, fail, map, map_opt, not, opt, peek, recognize, value},
-    error::{ContextError, ParseError},
-    multi::{many0, many1, many_till, separated_list0, separated_list1},
+    combinator::{map, opt, value},
+    multi::separated_list1,
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult,
 };
+use num::{bigint::ToBigInt, integer::Integer, BigInt, Num};
 
-use crate::parser::{identifier, ptok, tok};
+use crate::parser::atoms::{identifier, kw, signed, sym, unsigned};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Type<ID>
@@ -161,14 +153,20 @@ where
 }
 
 #[cfg(test)]
-impl<ID> PlainType<ID> {
-    fn into_type(self) -> Type {
+impl<ID> PlainType<ID>
+where
+    ID: PartialEq + Eq,
+{
+    fn into_type(self) -> Type<ID> {
         Type::plain(self)
     }
 }
 
 #[cfg(test)]
-impl<ID> BuiltinType<ID> {
+impl<ID> BuiltinType<ID>
+where
+    ID: PartialEq + Eq,
+{
     fn into_plain(self) -> PlainType<ID> {
         PlainType::Builtin(self)
     }
@@ -293,48 +291,6 @@ impl TypeTag {
     fn private(self) -> Self {
         TypeTag(self.0, TypeTagClass::Private, self.2)
     }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////
-
-fn kw(word: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
-    move |input| tok(tag(word))(input)
-}
-
-fn sym(sym: &'static str) -> impl Fn(&str) -> IResult<&str, &str> {
-    move |input| ptok(tag(sym))(input)
-}
-
-fn signed<T>(input: &str) -> IResult<&str, T>
-where
-    T: Num,
-{
-    let dec = tok(recognize(pair(tag("-"), digit1)));
-    alt((map_opt(dec, |t| T::from_str_radix(t, 10).ok()), unsigned))(input)
-}
-
-fn unsigned<T>(input: &str) -> IResult<&str, T>
-where
-    T: Num,
-{
-    let dec = map_opt(digit1, |t| T::from_str_radix(t, 10).ok());
-    let hex = map_opt(
-        delimited(
-            tag("'"),
-            many1(delimited(multispace0, hex_digit1, multispace0)),
-            pair(the_char('\''), one_of("Hh")),
-        ),
-        |t| T::from_str_radix(&t.join(""), 16).ok(),
-    );
-    let bin = map_opt(
-        delimited(
-            tag("'"),
-            many1(delimited(multispace0, one_of("01"), multispace0)),
-            pair(the_char('\''), one_of("Bb")),
-        ),
-        |t| T::from_str_radix(&t.into_iter().collect::<String>(), 2).ok(),
-    );
-    tok(alt((dec, hex, bin)))(input)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -533,30 +489,11 @@ pub fn type_tag(input: &str) -> IResult<&str, TypeTag> {
 #[cfg(test)]
 mod tests {
     use super::{BuiltinType as BI, *};
-    use nom::error::VerboseError;
 
     macro_rules! parse_ok {
         ($parser:expr, $case:literal, $val:expr) => {
-            assert_eq!(
-                $parser($case),
-                Ok::<_, nom::Err<VerboseError<&str>>>(("", $val))
-            )
+            assert_eq!($parser($case), Ok(("", $val)))
         };
-    }
-
-    #[test]
-    fn lexeme_number() {
-        parse_ok!(signed::<u8, _>, "123", 123);
-        parse_ok!(signed, "-123", -123);
-
-        parse_ok!(signed, "'ff'h", 255);
-        parse_ok!(signed, "'1100'b", 0xC);
-
-        parse_ok!(signed, "'01 ff'h", 0x1FF);
-        parse_ok!(signed, "'0001 1111'b", 0x1F);
-
-        parse_ok!(signed, "'  01 ff 'h", 0x1FF);
-        parse_ok!(signed, "'   0001 1111 'b", 0x1F);
     }
 
     macro_rules! type_ok {
@@ -567,7 +504,7 @@ mod tests {
 
     macro_rules! pair_str_val {
         ($($k:ident = $v:expr),*) => {
-            [$((stringify!($k).to_string(), $v)),*].iter().cloned().collect()
+            [$((stringify!($k).to_string(), $v.into())),*].iter().cloned().collect()
         };
     }
 

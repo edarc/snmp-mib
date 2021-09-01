@@ -113,7 +113,7 @@ impl SMIScalar {
     pub fn decode_from_num_oid(
         &self,
         mut fragment_iter: impl Iterator<Item = u32>,
-        encoding: TableIndexEncoding,
+        _encoding: TableIndexEncoding,
     ) -> Option<TableIndexVal> {
         use InetAddressEncoding as Enc;
         use SMIScalar as SS;

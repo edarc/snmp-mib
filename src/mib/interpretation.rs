@@ -94,7 +94,7 @@ pub struct SMITableCell {
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableIndexValue {
     Integer(BigInt),
-    Enumeration(BigInt, String),
+    EnumVariant(BigInt, String),
     InetAddress(InetAddress),
     ObjectIdentifier(OidExpr),
 }
@@ -154,7 +154,7 @@ impl SMIScalar {
             SS::Enumeration(variants) => {
                 let value = fragment_iter.next()?.into();
                 let name = variants.get(&value)?;
-                Some(TIV::Enumeration(value, name.to_string()))
+                Some(TIV::EnumVariant(value, name.to_string()))
             }
             SS::Gauge(_) => None,
             SS::Integer(_) => fragment_iter.next().map(|v| TIV::Integer(v.into())),

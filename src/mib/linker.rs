@@ -351,14 +351,14 @@ impl Linker {
 
         let table_fields = self.interpret_table_fields(&table_entry_name)?;
 
-        let effective_indexing = match self.object_indexes.get(&table_entry_name)? {
+        let effective_index_fields = match self.object_indexes.get(&table_entry_name)? {
             TableIndexing::Index(cols) => cols,
             TableIndexing::Augments(name) => match self.object_indexes.get(&name)? {
                 TableIndexing::Index(cols) => cols,
                 _ => return None,
             },
         };
-        let indexing = effective_indexing
+        let index_fields = effective_index_fields
             .iter()
             .filter_map(|(name, implied)| {
                 self.object_numeric_oids.get(&name).map(|num_oid| {
@@ -375,7 +375,7 @@ impl Linker {
             entry_object: IdentifiedObj::new(entry_num_oid, table_entry_name.clone()),
             entry_type_name: entry_type_name.clone(),
             field_interpretation: table_fields,
-            indexing,
+            index_fields,
         })
     }
 

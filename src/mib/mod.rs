@@ -121,9 +121,9 @@ impl MIB {
             {
                 let mut fragment = best_expr.fragment.into_iter();
                 println!("{:?}", fragment);
-                let mut indices = vec![];
+                let mut instance_indices = vec![];
 
-                for (index, encoding) in table.indexing.iter() {
+                for (index, encoding) in table.index_fields.iter() {
                     let decoded_value = match table.field_interpretation.get(&index) {
                         Some(SI::Scalar(scalar_type)) => {
                             match scalar_type.decode_from_num_oid(&mut fragment, *encoding) {
@@ -139,13 +139,13 @@ impl MIB {
 
                         _ => return None,
                     };
-                    indices.push((index.clone(), decoded_value));
+                    instance_indices.push((index.clone(), decoded_value));
                 }
 
                 SI::TableCell(SMITableCell {
                     cell_interpretation: cell_scalar.clone(),
                     table,
-                    indices,
+                    instance_indices,
                 })
             } else {
                 int_descr.smi_interpretation.clone()

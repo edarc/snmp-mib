@@ -75,7 +75,7 @@ pub struct SMITable {
     pub entry_object: IdentifiedObj,
     pub entry_type_name: Identifier,
     pub field_interpretation: BTreeMap<IdentifiedObj, SMIInterpretation>,
-    pub indexing: Vec<(IdentifiedObj, TableIndexEncoding)>,
+    pub index_fields: Vec<(IdentifiedObj, TableIndexEncoding)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -88,7 +88,7 @@ pub enum TableIndexEncoding {
 pub struct SMITableCell {
     pub cell_interpretation: SMIScalar,
     pub table: SMITable,
-    pub indices: Vec<(IdentifiedObj, TableIndexVal)>,
+    pub instance_indices: Vec<(IdentifiedObj, TableIndexVal)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

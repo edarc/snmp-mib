@@ -701,4 +701,40 @@ mod tests {
                 .with_constraint(Constraint::value((0, 9)))
         );
     }
+
+    #[test]
+    fn very_fancy_type() {
+        type_ok!(
+            r#"SEQUENCE {
+                fancy [APPLICATION 4] IMPLICIT INTEGER (16..42, SIZE(4)),
+                pants [18] OCTET STRING (SIZE(0..8)),
+            }"#,
+            Type {
+                ty: BI::Sequence(vec![
+                    (
+                        "fancy".to_string(),
+                        BI::Integer(None)
+                            .into_plain()
+                            .into_type()
+                            .with_constraint(Constraint {
+                                size: Some(vec![ConstraintRange::Point(4.into())]),
+                                value: Some(vec![ConstraintRange::Closed(16.into(), 42.into())])
+                            })
+                            .with_tag(TypeTag::new(4).implicit().application())
+                    ),
+                    (
+                        "pants".to_string(),
+                        BI::OctetString
+                            .into_plain()
+                            .into_type()
+                            .with_constraint(Constraint::size((0, 8)))
+                            .with_tag(TypeTag::new(18))
+                    )
+                ])
+                .into_plain(),
+                constraint: None,
+                tag: None
+            }
+        );
+    }
 }

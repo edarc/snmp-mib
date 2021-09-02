@@ -13,12 +13,11 @@ pub use asn_type::{
 
 use std::collections::HashMap;
 
-use crate::parser::atoms::{identifier, ptok, tok, ws_or_comment};
+use crate::parser::atoms::{identifier, kw, sym, ws_or_comment};
 use crate::types::{Identifier, OidExpr};
 
 use nom::{
     branch::alt,
-    bytes::complete::tag,
     multi::many0,
     sequence::{delimited, preceded, tuple},
     IResult,
@@ -115,8 +114,8 @@ pub(crate) fn parse_module(data: &str) -> IResult<&str, ParsedModule> {
         decls::trap_type,
     )));
 
-    let module_begin = tuple((tok(tag("DEFINITIONS")), ptok(tag("::=")), tok(tag("BEGIN"))));
-    let module_end = tok(tag("END"));
+    let module_begin = tuple((kw("DEFINITIONS"), sym("::="), kw("BEGIN")));
+    let module_end = kw("END");
     let mut module = tuple((
         preceded(many0(ws_or_comment), identifier),
         delimited(module_begin, module_decls, module_end),

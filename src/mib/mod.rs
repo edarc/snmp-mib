@@ -5,8 +5,8 @@ mod linker;
 mod smi_well_known;
 
 pub use crate::mib::interpretation::{
-    InetAddress, SMIInterpretation, SMIScalar, SMITable, SMITableCell, TableIndexEncoding,
-    TableIndexVal,
+    InetAddress, InetAddressEncoding, SMIInterpretation, SMIScalar, SMITable, SMITableCell,
+    TableIndexEncoding, TableIndexValue,
 };
 
 use std::collections::BTreeMap;
@@ -127,8 +127,8 @@ impl MIB {
                     let decoded_value = match table.field_interpretation.get(&index) {
                         Some(SI::Scalar(scalar_type)) => {
                             match scalar_type.decode_from_num_oid(&mut fragment, *encoding) {
-                                Some(TableIndexVal::ObjectIdentifier(oidexpr)) => {
-                                    TableIndexVal::ObjectIdentifier(
+                                Some(TableIndexValue::ObjectIdentifier(oidexpr)) => {
+                                    TableIndexValue::ObjectIdentifier(
                                         self.lookup_best_oidexpr(&oidexpr).unwrap_or(oidexpr),
                                     )
                                 }

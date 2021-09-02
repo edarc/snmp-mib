@@ -88,11 +88,11 @@ pub enum TableIndexEncoding {
 pub struct SMITableCell {
     pub cell_interpretation: SMIScalar,
     pub table: SMITable,
-    pub instance_indices: Vec<(IdentifiedObj, TableIndexVal)>,
+    pub instance_indices: Vec<(IdentifiedObj, TableIndexValue)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum TableIndexVal {
+pub enum TableIndexValue {
     Integer(BigInt),
     Enumeration(BigInt, String),
     InetAddress(InetAddress),
@@ -143,10 +143,10 @@ impl SMIScalar {
         &self,
         mut fragment_iter: impl Iterator<Item = u32>,
         _encoding: TableIndexEncoding,
-    ) -> Option<TableIndexVal> {
+    ) -> Option<TableIndexValue> {
         use InetAddressEncoding as Enc;
         use SMIScalar as SS;
-        use TableIndexVal as TIV;
+        use TableIndexValue as TIV;
         match self {
             SS::Bits(_names) => None,
             SS::Bytes => None,
@@ -188,8 +188,10 @@ impl SMIScalar {
         }
     }
 
-    fn decode_ipv4_from_num_oid(fragment_iter: impl Iterator<Item = u32>) -> Option<TableIndexVal> {
-        use TableIndexVal as TIV;
+    fn decode_ipv4_from_num_oid(
+        fragment_iter: impl Iterator<Item = u32>,
+    ) -> Option<TableIndexValue> {
+        use TableIndexValue as TIV;
         let mut octet_iter = fragment_iter.take(4);
         let mut octets = [0u8; 4];
         // TODO: Handle try_into failing or iterator coming up short.

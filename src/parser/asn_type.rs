@@ -73,8 +73,8 @@ where
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Constraint {
-    size: Option<Vec<ConstraintRange>>,
-    value: Option<Vec<ConstraintRange>>,
+    pub size: Option<Vec<ConstraintRange>>,
+    pub value: Option<Vec<ConstraintRange>>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -99,7 +99,7 @@ impl std::fmt::Debug for ConstraintRange {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TypeTag(TypeTagKind, TypeTagClass, u32);
+pub struct TypeTag(pub TypeTagKind, pub TypeTagClass, pub u32);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeTagKind {

@@ -1,15 +1,18 @@
 //! The parser for MIB module definitions.
 //!
-//! The main API surface consists of `ModuleDecl` and `parse_module`, where the latter parses a MIB
-//! module into a sequence of the former.
+//! In general the parser is an implementation detail, but `snmp-mib` does expose the parsed ASN.1
+//! types of objects, and the Rust types that represent those ASN.1 types are defined here.
 
-pub mod asn_type;
-pub mod atoms;
-pub mod decls;
+pub(crate) mod asn_type;
+mod atoms;
+mod decls;
+
+pub use asn_type::{
+    BuiltinType, Constraint, ConstraintRange, PlainType, Type, TypeTag, TypeTagClass, TypeTagKind,
+};
 
 use std::collections::HashMap;
 
-use crate::parser::asn_type::Type;
 use crate::parser::atoms::{identifier, ptok, tok, ws_or_comment};
 use crate::types::{Identifier, OidExpr};
 

@@ -1,5 +1,7 @@
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 
+use crate::types::IdentifiedObj;
+
 /// Module name, identifier
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Identifier(pub String, pub String);
@@ -47,5 +49,11 @@ impl IntoIdentifier for &str {
         let rest = split.pop().unwrap();
         let first = split.pop().unwrap_or("");
         (first, rest).into_identifier()
+    }
+}
+
+impl IntoIdentifier for IdentifiedObj {
+    fn into_identifier(self) -> Identifier {
+        self.1
     }
 }

@@ -5,15 +5,11 @@ use crate::types::identifier::Identifier;
 use crate::types::numeric_oid::NumericOid;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct IdentifiedObj(NumericOid, Identifier);
+pub struct IdentifiedObj(pub(super) NumericOid, pub(super) Identifier);
 
 impl IdentifiedObj {
     pub fn new(numeric_oid: NumericOid, name: Identifier) -> Self {
         IdentifiedObj(numeric_oid, name)
-    }
-
-    pub fn as_identifier(&self) -> &Identifier {
-        &self.1
     }
 }
 

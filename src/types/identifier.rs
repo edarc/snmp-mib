@@ -4,7 +4,7 @@ use crate::types::IdentifiedObj;
 
 /// Module name, identifier
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Identifier(pub String, pub String);
+pub struct Identifier(String, String);
 
 impl Identifier {
     pub fn new(modname: impl AsRef<str>, name: impl AsRef<str>) -> Self {
@@ -17,6 +17,14 @@ impl Identifier {
 
     pub fn is_root(&self) -> bool {
         self.0 == "" && self.1 == ""
+    }
+
+    pub fn module_name(&self) -> &str {
+        &self.0
+    }
+
+    pub fn local_name(&self) -> &str {
+        &self.1
     }
 }
 

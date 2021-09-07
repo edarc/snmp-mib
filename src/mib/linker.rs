@@ -264,7 +264,7 @@ impl Linker {
             },
 
             PI::Referenced(referent_name, named_vals) => match SMI_WELL_KNOWN_TYPES
-                .get(referent_name.1.as_str())
+                .get(referent_name.local_name())
             {
                 // Referenced types which are well-known Integer32 or BITS types that have named
                 // values are enumerations.
@@ -443,7 +443,10 @@ impl Linker {
             {
                 // If the current effective_type is a reference, check if it's an SMI well-known
                 // type. Otherwise, try to dereference it into new_effective_type.
-                if SMI_WELL_KNOWN_TYPES.get(referent_name.1.as_str()).is_some() {
+                if SMI_WELL_KNOWN_TYPES
+                    .get(referent_name.local_name())
+                    .is_some()
+                {
                     break;
                 } else {
                     self.type_defs.get(&referent_name)

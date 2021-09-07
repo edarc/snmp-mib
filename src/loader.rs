@@ -241,9 +241,8 @@ impl Loader {
                     ""
                 } else {
                     imports.get(&name).unwrap_or(this_module)
-                }
-                .to_string();
-                Identifier(module_name, name)
+                };
+                Identifier::new(module_name, name)
             }
         };
 

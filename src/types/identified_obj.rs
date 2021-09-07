@@ -8,7 +8,7 @@ use crate::types::numeric_oid::NumericOid;
 pub struct IdentifiedObj(pub(super) NumericOid, pub(super) Identifier);
 
 impl IdentifiedObj {
-    pub fn new(numeric_oid: NumericOid, name: Identifier) -> Self {
+    pub(crate) fn new(numeric_oid: NumericOid, name: Identifier) -> Self {
         IdentifiedObj(numeric_oid, name)
     }
 }

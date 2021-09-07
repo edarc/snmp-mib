@@ -17,72 +17,237 @@ use num::{bigint::ToBigInt, integer::Integer, BigInt, Num};
 
 use crate::parser::atoms::{identifier, kw, signed, sym, unsigned};
 
+/// A representation of a complete ASN.1 type.
+///
+/// An ASN.1 type includes a "plain" type which is optionally constrained, and may optionally have
+/// encoding tags attached. In all public APIs, the `ID` parameter is
+/// [`Identifier`][crate::types::Identifier].
+///
+/// This type roughly corresponds to the **TaggedType** grammar production in ITU-T Rec X.680.
+///
+/// ## Example
+///
+/// The following ASN.1 type, occurring in the `MY-MIB` module definition where `ImportedType` has
+/// been imported from `OTHER-MODULE`:
+///
+/// ```text
+/// SEQUENCE {
+///     fancy [APPLICATION 4] IMPLICIT INTEGER (16..42, SIZE(4)),
+///     pants [18] ImportedType (SIZE(0..8)),
+/// }
+/// ```
+///
+/// Would be parsed as the following structure (of type `Type<Identifier>`):
+///
+/// ```text
+/// Type {
+///     ty: Builtin(Sequence([
+///         (
+///             Identifier("MY-MIB::fancy"),
+///             Type {
+///                 ty: Builtin(Integer(None)),
+///                 constraint: Some(Constraint {
+///                     size: Some([4]),
+///                     value: Some([16..42])
+///                 }),
+///                 tag: Some(TypeTag(Implicit, Application, 4))
+///             }
+///         ),
+///         (
+///             Identifier("MY-MIB::pants"),
+///             Type {
+///                 ty: Referenced(
+///                     Identifier("OTHER-MODULE::ImportedType"),
+///                     None,
+///                 ),
+///                 constraint: Some(Constraint {
+///                     size: Some([0..8]),
+///                     value: None
+///                 }),
+///                 tag: Some(TypeTag(Unspecified, ContextSpecific, 18))
+///             }
+///         )
+///     ])),
+///     constraint: None,
+///     tag: None
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Type<ID>
 where
     ID: PartialEq + Eq,
 {
+    /// The "plain" (unconstrained, untagged) type.
     pub ty: PlainType<ID>,
+    /// The constraints applied to the type, if any. Currently supported are size constraints and
+    /// value range constraints.
     pub constraint: Option<Constraint>,
+    /// ASN.1 encoding tags applied to the type, if any.
     pub tag: Option<TypeTag>,
 }
 
+/// A representation of a plain ASN.1 type, excluding constraints and tagging.
+///
+/// This can be either a built-in, primitive ASN.1 type such as `INTEGER`, or a referenced type,
+/// which is an identifier that refers to some other type (either well-known or user defined) that
+/// is not built-in. In all public APIs, the `ID` parameter is
+/// [`Identifier`][crate::types::Identifier].
+///
+/// This roughly corresponds to the **Type** grammar production in ITU-T Rec X.680, except that the
+/// **ConstrainedType** variant is not used in order to reduce nesting; instead constraints are
+/// represented by the `Type::constraint` field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlainType<ID>
 where
     ID: PartialEq + Eq,
 {
+    /// A built-in ASN.1 primitive type. The data member describes which built-in type it is.
     Builtin(BuiltinType<ID>),
+    /// A referenced type. The data members are the identifier of the referent type, and optionally
+    /// a set of named values, which may be present on any referenced type but are generally only
+    /// used if the referent is an integer of some kind.
     Referenced(ID, Option<HashMap<String, BigInt>>),
     // Constrained,  <-- this is made non-recursive by moving constraints to Type
 }
 
+/// A representation of a built-in ASN.1 type.
+///
+/// This can express all of the ASN.1 built-in types that occur in SNMP MIB module definitions, but
+/// excludes a significant a number of other built-in types that are (to the author's knowledge)
+/// never found in MIBs. In all public APIs, the `ID` parameter is
+/// [`Identifier`][crate::types::Identifier].
+///
+/// This type roughly corresponds to the **BuiltinType** grammar production in ITU-T Rec X.680,
+/// except that the **PrefixedType** variant is deliberately not used in order to reduce nesting;
+/// instead tags are represented by the `Type::tag` field.
+///
+/// The **BuiltinType** production defined in X.680 contains the following alternates that are not
+/// supported here:
+///
+/// - **BitStringType** (`BIT STRING`) --- SMI defines and uses the well-known type `BITS` instead.
+/// - **CharacterStringType** (`CHARACTER STRING`, `BMPString`, `GeneralString`, `GraphicString`,
+///   `IA5String`, `ISO646String`, `NumericString`, `PrintableString`, `TeletextString`,
+///   `T61String`, `UniversalString`, `UTF8String`, `VideotexString`, `VisibleString`)
+/// - **DateType** (`DATE`)
+/// - **DateTimeType** (`DATE-TIME`)
+/// - **DurationType** (`DURATION`) --- SMI defines and uses the well-known type `TimeTicks`
+///   instead.
+/// - **EmbeddedPDVType** (`EMBEDDED PDV`)
+/// - **EnumeratedType** (`ENUMERATED`) --- SMI uses `INTEGER` with named values instead.
+/// - **ExternalType** (`EXTERNAL`)
+/// - **InstanceOfType** (ITU-T Rec X.681)
+/// - **IRIType** (`OID-IRI`)
+/// - **ObjectClassFieldType** (ITU-T Rec X.681)
+/// - **RealType** (`REAL`)
+/// - **RelativeIRIType** (`RELATIVE-OID-IRI`)
+/// - **RelativeOIDType** (`RELATIVE-OID`)
+/// - **SetType** (`SET`)
+/// - **SetOfType** (`SET OF`)
+/// - **TimeType** (`TIME`)
+/// - **TimeOfDayType** (`TIME-OF-DAY`)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BuiltinType<ID>
 where
     ID: PartialEq + Eq,
 {
-    // BitString,
+    /// A `BOOLEAN`.
     Boolean,
-    // CharacterString,
+    /// A `CHOICE` enum. The data member is the sequence of variant names and their types.
     Choice(Vec<(String, Type<ID>)>),
-    // Date,
-    // DateTime,
-    // Duration,
-    // EmbeddedPDV,
-    // Enumerated,
-    // External,
-    // InstanceOf,
+    /// An `INTEGER`. The data member is a map of named values keyed by their names, if one is
+    /// provided. In SNMP MIBs, `INTEGER` with named values is used for C-style enum types instead
+    /// of the more expected `ENUMERATION`.
     Integer(Option<HashMap<String, BigInt>>),
-    // IRI,
+    /// The `NULL` type --- analogous to Rust's `()` (unit).
     Null,
-    // ObjectClassField,
+    /// An `OBJECT IDENTIFIER`.
     ObjectIdentifier,
+    /// An `OCTET STRING`.
     OctetString,
-    // Real,
-    // RelativeIRI,
-    // RelativeOID,
+    /// A `SEQUENCE` --- analogous to a struct. The data member is the sequence of field identifiers
+    /// and their types.
     Sequence(Vec<(ID, Type<ID>)>),
+    /// A `SEQUENCE OF` --- analogous to a `Vec<T>`. The data member is the type of `T` (which must
+    /// be boxed to keep `BuiltinType` a bounded size).
     SequenceOf(Box<Type<ID>>),
-    // Set,
-    // SetOf,
-    // Prefixed,  <-- this is made non-recursive by moving tags to Type
-    // Time,
-    // TimeOfDay,
 }
 
+/// A constraint on an ASN.1 type.
+///
+/// The ASN.1 constraint grammar is extremely expressive, and this type only represents a very
+/// small subset of it that appears in MIB module definitions. That subset specifically is
+///
+/// * Size constraints (which constrain the allowable length of variable-length types), and
+/// * Value constraints (which constrain the allowable values out of the range of all possible
+///   values the plain type may represent).
+///
+/// Additionally, union is the only supported set operation; intersection and exclusion is not
+/// supported.
+///
+/// This roughly corresponds to the **Constraint** grammar production in ITU-T Rec X.680, except:
+///
+/// - **ConstraintSpec** may only be **SubtypeConstraint**,
+/// - **ElementSetSpecs** may not include **AdditionalElementSetSpec**,
+/// - **ElementSetSpec** may only be **Unions**,
+/// - **Intersections** may only contain one **IntersectionElements**,
+/// - **IntersectionElements** may only be **Elements**,
+/// - **Elements** may only be **SubtypeElements**,
+/// - **SubtypeElements** may only be **SingleValue**, **ValueRange**, or **SizeConstraint**.
+///
+/// ## Example
+///
+/// The ASN.1 constraint `(16..42, SIZE(4))` is parsed as the following structure:
+///
+/// ```
+/// # use snmp_mib::parser::{Constraint, ConstraintRange};
+/// Constraint {
+///     size: Some(vec![ConstraintRange::Point(4.into())]),
+///     value: Some(vec![ConstraintRange::Closed(16.into(), 42.into())]),
+/// };
+/// ```
+///
+/// The constraint `(-1 | 4 | 16)` is parsed as:
+///
+/// ```
+/// # use snmp_mib::parser::{Constraint, ConstraintRange};
+/// Constraint {
+///     size: None,
+///     value: Some(vec![
+///         ConstraintRange::Point((-1).into()),
+///         ConstraintRange::Point(4.into()),
+///         ConstraintRange::Point(16.into()),
+///     ]),
+/// };
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Constraint {
+    /// If there is a size constraint, lists the allowable sizes. `None` means the size is
+    /// unconstrained.
     pub size: Option<Vec<ConstraintRange>>,
+    /// If there is a value constraint, lists the allowable values. `None` means the value is
+    /// unconstrained.
     pub value: Option<Vec<ConstraintRange>>,
 }
 
+/// A value or range of values that are allowable for a constraint.
+///
+/// This corresponds to the **SingleValue** and **ValueRange** grammar productions in ITU-T Rec
+/// X.680.
 #[derive(Clone, PartialEq, Eq)]
 pub enum ConstraintRange {
+    /// A completely unbounded range; e.g. `MIN..MAX`.
     Full,
+    /// A range with an upper bound only; e.g. `MIN..4`. The data member is the upper bound, which
+    /// is inclusive.
     LessEq(BigInt),
+    /// A range with a lower bound only; e.g. `-1..MAX`. The data member is the lower bound, which
+    /// is inclusive.
     GreaterEq(BigInt),
+    /// A range with both upper and lower bounds, e.g. `-1..48`. The data members are the lower and
+    /// upper bounds, which are both inclusive.
     Closed(BigInt, BigInt),
+    /// A singular allowable value, e.g. `16`. The data member is the allowable value. This is
+    /// nearly always found in a set of multiple `ConstraintRange`s.
     Point(BigInt),
 }
 
@@ -98,21 +263,56 @@ impl std::fmt::Debug for ConstraintRange {
     }
 }
 
+/// Encoding tag information for an ASN.1 type.
+///
+/// The data members are the kind of tag, the class of tag, and the tag value itself.
+///
+/// This type, when used in the `tag` field of [`Type`], roughly corresponds to the **TaggedType**
+/// grammar production in ITU-T Rec X.680. It would correspond to the **Tag** production except
+/// that `IMPLICIT`/`EXPLICIT`/unspecified are also included.
+///
+/// ## Example
+///
+/// A field or type tagged `[APPLICATION 4] IMPLICIT` would have `Type::tag` ==
+/// `TypeTag(TypeTagKind::Implicit, TypeTagClass::Application, 4)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TypeTag(pub TypeTagKind, pub TypeTagClass, pub u32);
 
+/// The kind of an ASN.1 encoding tag.
+///
+/// The kind refers to whether the tag is specified to be `IMPLICIT`, `EXPLICIT`, or unspecified.
+/// The effective tagging kind is always either implicit or explicit, and is determined by the
+/// rules in ITU-T Rec X.680 § 31.2.7. The parser does not implement these rules; this type
+/// strictly represents the specific, as-written syntax used in the type expression.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeTagKind {
+    /// The tag specified neither `EXPLICIT` nor `IMPLICIT`.
     Unspecified,
+    /// The tag used the `IMPLICIT` keyword.
     Implicit,
+    /// The tag used the `EXPLICIT` keyword.
     Explicit,
 }
 
+/// The class of an ASN.1 encoding tag.
+///
+/// In ASN.1, the tag class is a "namespace" for tag numbers. There are 4 such namespaces, one of
+/// which (`UNIVERSAL`) is generally reserved for built-in types, but is user-expressible anyway.
+/// Tags which do not specify any class are said to be "context-specific" class.
+///
+/// ## Examples
+///
+/// * `[APPLICATION 4]` would have the class `TypeTagClass::Application`.
+/// * `[42]` would have the class `TypeTagClass::ContextSpecific`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeTagClass {
+    /// The tag class was specified as `UNIVERSAL`.
     Universal,
+    /// The tag class was specified as `APPLICATION`.
     Application,
+    /// The tag class was specified as `PRIVATE`.
     Private,
+    /// The tag class was not specified, meaning it is context-specific.
     ContextSpecific,
 }
 

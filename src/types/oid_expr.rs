@@ -88,18 +88,6 @@ impl IntoOidExpr for &str {
     }
 }
 
-impl IntoOidExpr for NumericOid {
-    fn into_oid_expr(self) -> Option<OidExpr> {
-        (&self).into_oid_expr()
-    }
-}
-
-impl<'a> IntoOidExpr for &'a NumericOid {
-    fn into_oid_expr(self) -> Option<OidExpr> {
-        ("", self).into_oid_expr()
-    }
-}
-
 impl IntoOidExpr for OidExpr {
     fn into_oid_expr(self) -> Option<OidExpr> {
         Some(self)

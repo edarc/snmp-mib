@@ -4,6 +4,8 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::slice::Iter;
 
+use crate::types::{IntoOidExpr, OidExpr};
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct NumericOid(Vec<u32>);
 
@@ -83,6 +85,18 @@ impl From<Vec<u32>> for NumericOid {
 impl From<&[u32]> for NumericOid {
     fn from(v: &[u32]) -> Self {
         NumericOid(v.to_vec())
+    }
+}
+
+impl IntoOidExpr for NumericOid {
+    fn into_oid_expr(self) -> Option<OidExpr> {
+        (&self).into_oid_expr()
+    }
+}
+
+impl<'a> IntoOidExpr for &'a NumericOid {
+    fn into_oid_expr(self) -> Option<OidExpr> {
+        ("", self).into_oid_expr()
     }
 }
 

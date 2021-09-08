@@ -8,8 +8,6 @@ use crate::types::{Identifier, NumericOid};
 /// This type pairs an identifier and its defined numeric OID, and is used in a variety of return
 /// values in the `snmp-mib` API where specifically identified objects are referenced.
 ///
-/// * `IdentifiedObj` is usable in API surfaces that accept an `impl IntoIdentifier`, as it
-///   directly implements [`IntoIdentifier`][crate::types::IntoIdentifier].
 /// * `IdentifiedObj` is usable in API surfaces that accept a `NumericOid`, as it can be `Deref`ed
 ///   as [`NumericOid`].
 /// * `IdentifiedObj` is usable in API surfaces that accept an `impl IntoOidExpr`, as it can be
@@ -25,6 +23,11 @@ pub struct IdentifiedObj(pub(super) NumericOid, pub(super) Identifier);
 impl IdentifiedObj {
     pub(crate) fn new(numeric_oid: NumericOid, name: Identifier) -> Self {
         IdentifiedObj(numeric_oid, name)
+    }
+
+    /// Use this `IdentifiedObj` as an `Identifier`.
+    pub fn identifier(&self) -> &Identifier {
+        &self.1
     }
 }
 

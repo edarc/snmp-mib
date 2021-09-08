@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 
-use crate::types::{IdentifiedObj, Indexable, OidExpr};
+use crate::types::{Indexable, OidExpr};
 
 /// A module-qualified name.
 ///
@@ -75,32 +75,6 @@ impl Debug for Identifier {
 impl Display for Identifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         write!(f, "{}::{}", self.0, self.1)
-    }
-}
-
-/// A trait for types that can be converted to Identifier.
-pub trait IntoIdentifier {
-    fn into_identifier(self) -> Identifier;
-}
-
-impl<M: AsRef<str>, N: AsRef<str>> IntoIdentifier for (M, N) {
-    fn into_identifier(self) -> Identifier {
-        Identifier::new(self.0.as_ref(), self.1.as_ref())
-    }
-}
-
-impl IntoIdentifier for &str {
-    fn into_identifier(self) -> Identifier {
-        let mut split = self.splitn(2, "::").collect::<Vec<_>>();
-        let rest = split.pop().unwrap();
-        let first = split.pop().unwrap_or("");
-        (first, rest).into_identifier()
-    }
-}
-
-impl IntoIdentifier for IdentifiedObj {
-    fn into_identifier(self) -> Identifier {
-        self.1
     }
 }
 

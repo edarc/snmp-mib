@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 use std::str::FromStr;
 
-use crate::types::{Indexable, OidExpr};
+use crate::types::{Indexable, IntoOidExpr, OidExpr};
 
 /// A module-qualified name.
 ///
@@ -99,5 +99,17 @@ impl Indexable for Identifier {
         U: Borrow<u32>,
     {
         OidExpr::new(self.clone(), fragment)
+    }
+}
+
+impl IntoOidExpr for Identifier {
+    fn into_oid_expr(self) -> OidExpr {
+        OidExpr::new(self, None::<u32>)
+    }
+}
+
+impl<'a> IntoOidExpr for &'a Identifier {
+    fn into_oid_expr(self) -> OidExpr {
+        OidExpr::new(self.clone(), None::<u32>)
     }
 }

@@ -91,7 +91,7 @@ impl MIB {
     /// While any named identifiers in the OID expression must be known to this MIB, the exact
     /// object referred to by some or all of a numeric suffix need not be.
     pub fn lookup_numeric_oid(&self, expr: impl IntoOidExpr) -> Option<NumericOid> {
-        let expr = expr.into_oid_expr()?;
+        let expr = expr.into_oid_expr();
         let oid = self
             .by_name
             .get(expr.parent())?

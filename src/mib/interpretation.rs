@@ -478,7 +478,7 @@ impl SMIScalar {
             },
             SS::ObjectIdentifier => {
                 let fragment = Self::decode_length_encoded_from_num_oid(fragment_iter)?;
-                let oidexpr = NumericOid::from(fragment).into_oid_expr()?;
+                let oidexpr = NumericOid::from(fragment).into_oid_expr();
                 Some(TIV::ObjectIdentifier(oidexpr))
             }
             SS::Text => None,

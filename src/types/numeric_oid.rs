@@ -4,7 +4,7 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::slice::Iter;
 
-use crate::types::{Indexable, IntoOidExpr, OidExpr};
+use crate::types::{Identifier, Indexable, IntoOidExpr, OidExpr};
 
 /// A numeric object identifier.
 ///
@@ -22,7 +22,7 @@ use crate::types::{Indexable, IntoOidExpr, OidExpr};
 /// ```
 /// # use snmp_mib::types::{NumericOid,IntoOidExpr};
 /// // Conversion to OidExpr
-/// let oid_expr = NumericOid::new([1, 3, 6]).into_oid_expr().unwrap();
+/// let oid_expr = NumericOid::new([1, 3, 6]).into_oid_expr();
 /// assert_eq!(oid_expr.parent().is_root(), true);
 /// assert_eq!(oid_expr.fragment(), [1, 3, 6]);
 ///
@@ -131,14 +131,14 @@ impl From<&[u32]> for NumericOid {
 }
 
 impl IntoOidExpr for NumericOid {
-    fn into_oid_expr(self) -> Option<OidExpr> {
+    fn into_oid_expr(self) -> OidExpr {
         (&self).into_oid_expr()
     }
 }
 
 impl<'a> IntoOidExpr for &'a NumericOid {
-    fn into_oid_expr(self) -> Option<OidExpr> {
-        ("", self).into_oid_expr()
+    fn into_oid_expr(self) -> OidExpr {
+        OidExpr::new(Identifier::root(), self)
     }
 }
 

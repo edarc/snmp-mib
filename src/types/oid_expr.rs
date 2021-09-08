@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 
 use smallvec::SmallVec;
 
-use crate::types::{Identifier, IntoIdentifier};
+use crate::types::Identifier;
 
 /// Root reference, OID fragment
 #[derive(Clone, Debug, PartialEq)]
@@ -49,53 +49,25 @@ impl Display for OidExpr {
     }
 }
 
-/// A trait for types that can be converted to OidExpr.
+/// Types that can be converted to [`OidExpr`].
+///
+/// `OidExpr` is the most general form of OID that `snmp-mib` currently supports, and other types,
+/// such as [`Identifier`] and [`NumericOid`][crate::types::NumericOid], are infallibly and
+/// losslessly convertible to it.  This trait allows all such types to be used in any API surface
+/// that expects an OID expression.
 pub trait IntoOidExpr {
-    fn into_oid_expr(self) -> Option<OidExpr>;
-}
-
-impl<P: IntoIdentifier, F: AsRef<[u32]>> IntoOidExpr for (P, F) {
-    fn into_oid_expr(self) -> Option<OidExpr> {
-        Some(OidExpr {
-            parent: self.0.into_identifier(),
-            fragment: self.1.as_ref().into(),
-        })
-    }
-}
-
-impl IntoOidExpr for &str {
-    fn into_oid_expr(self) -> Option<OidExpr> {
-        let split = self.split(".").collect::<Vec<_>>();
-        let mut fragments = split
-            .iter()
-            .rev()
-            .map(|f| f.parse::<u32>())
-            .take_while(|r| r.is_ok())
-            .map(|r| r.unwrap())
-            .collect::<Vec<_>>();
-        fragments.reverse();
-        match (fragments.len(), split.len()) {
-            (f, s) if f == s => Some(OidExpr {
-                parent: Identifier::root(),
-                fragment: fragments.into(),
-            }),
-            (f, s) if f == s - 1 => Some(OidExpr {
-                parent: split[0].into_identifier(),
-                fragment: fragments.into(),
-            }),
-            _ => None,
-        }
-    }
+    /// Convert `self` to an `OidExpr`. Must be lossless and panic-free.
+    fn into_oid_expr(self) -> OidExpr;
 }
 
 impl IntoOidExpr for OidExpr {
-    fn into_oid_expr(self) -> Option<OidExpr> {
-        Some(self)
+    fn into_oid_expr(self) -> OidExpr {
+        self
     }
 }
 
 impl<'a> IntoOidExpr for &'a OidExpr {
-    fn into_oid_expr(self) -> Option<OidExpr> {
-        Some(self.clone())
+    fn into_oid_expr(self) -> OidExpr {
+        self.clone()
     }
 }

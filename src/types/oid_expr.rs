@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use smallvec::SmallVec;
 
-use crate::types::Identifier;
+use crate::types::{Identifier, Indexable};
 
 /// Root reference, OID fragment
 #[derive(Clone, Debug, PartialEq)]
@@ -93,5 +93,21 @@ impl IntoOidExpr for OidExpr {
 impl<'a> IntoOidExpr for &'a OidExpr {
     fn into_oid_expr(self) -> OidExpr {
         self.clone()
+    }
+}
+
+impl Indexable for OidExpr {
+    type Output = OidExpr;
+
+    fn index_by_fragment<I, U>(&self, fragment: I) -> Self::Output
+    where
+        I: IntoIterator<Item = U>,
+        U: Borrow<u32>,
+    {
+        let additional_fragment = fragment.into_iter().map(|u| *u.borrow());
+        OidExpr::new(
+            self.parent.clone(),
+            self.fragment.iter().copied().chain(additional_fragment),
+        )
     }
 }

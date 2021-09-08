@@ -17,7 +17,7 @@ use sequence_trie::SequenceTrie;
 use crate::loader::Loader;
 use crate::mib::linker::{InternalObjectDescriptor, Linker};
 use crate::parser::asn_type::Type;
-use crate::types::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
+use crate::types::{IdentifiedObj, Identifier, Indexable, IntoOidExpr, NumericOid, OidExpr};
 
 /// A description of an object in the MIB.
 ///

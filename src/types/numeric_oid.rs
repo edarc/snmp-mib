@@ -4,7 +4,7 @@ use std::iter::FromIterator;
 use std::ops::Deref;
 use std::slice::Iter;
 
-use crate::types::{IntoOidExpr, OidExpr};
+use crate::types::{Indexable, IntoOidExpr, OidExpr};
 
 /// A numeric object identifier.
 ///
@@ -74,51 +74,6 @@ impl NumericOid {
     /// ```
     pub fn parent(&self) -> Self {
         self.0[..(self.0.len() - 1)].iter().collect()
-    }
-
-    /// Index this OID by an integer.
-    ///
-    /// Indexing an OID simply means finding some child OID by creating a new OID with path
-    /// elements appended. SMI specifies several ways of indexing; integer is the simplest.
-    ///
-    /// ```
-    /// # use snmp_mib::types::NumericOid;
-    /// let parent = NumericOid::new([1, 2, 3, 4]);
-    /// let child_fourteen = parent.index_by_integer(14);
-    /// assert_eq!(format!("{}", child_fourteen), "1.2.3.4.14");
-    /// ````
-    // TODO: Move this to a FragmentIndex trait.
-    pub fn index_by_integer(&self, fragment: u32) -> Self {
-        self.index_by_fragment(&[fragment])
-    }
-
-    /// Index this OID by an OID fragment.
-    ///
-    /// Indexing an OID simply means finding some child OID by creating a new OID with path
-    /// elements appended. "Fragment" refers, in `snmp-mib`, to a piece of a numeric OID which is
-    /// relative to some parent. Indexing an OID by a fragment simply returns a new OID which is
-    /// the concatenation of the parent OID and the fragment.
-    ///
-    /// For this method, the fragment can be any iterable of `u32`.
-    ///
-    /// ```
-    /// # use snmp_mib::types::NumericOid;
-    /// let parent = NumericOid::new([1, 2, 3]);
-    /// let fragment = vec![10, 20, 30];
-    /// let indexed = parent.index_by_fragment(fragment);
-    /// assert_eq!(format!("{}", indexed), "1.2.3.10.20.30");
-    /// ```
-    // TODO: Move this to a FragmentIndex trait.
-    pub fn index_by_fragment<I, U>(&self, fragment: I) -> Self
-    where
-        I: IntoIterator<Item = U>,
-        U: Borrow<u32>,
-    {
-        self.0
-            .iter()
-            .copied()
-            .chain(fragment.into_iter().map(|u| *u.borrow()))
-            .collect()
     }
 }
 
@@ -196,6 +151,22 @@ impl Display for NumericOid {
 impl Debug for NumericOid {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         write!(f, r"NumericOid({})", self)
+    }
+}
+
+impl Indexable for NumericOid {
+    type Output = NumericOid;
+
+    fn index_by_fragment<I, U>(&self, fragment: I) -> Self::Output
+    where
+        I: IntoIterator<Item = U>,
+        U: Borrow<u32>,
+    {
+        self.0
+            .iter()
+            .copied()
+            .chain(fragment.into_iter().map(|u| *u.borrow()))
+            .collect()
     }
 }
 

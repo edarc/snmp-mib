@@ -1,5 +1,6 @@
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
+use std::str::FromStr;
 
 use smallvec::SmallVec;
 
@@ -46,6 +47,29 @@ impl Display for OidExpr {
                 .collect::<Vec<String>>()
                 .join(".")
         )
+    }
+}
+
+impl FromStr for OidExpr {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let split = s.split(".").collect::<Vec<_>>();
+        let mut fragments = split
+            .iter()
+            .rev()
+            .map(|f| f.parse::<u32>())
+            .take_while(|r| r.is_ok())
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+        fragments.reverse();
+        match (fragments.len(), split.len()) {
+            (f, s) if f == s => Ok(Identifier::root().index_by_fragment(fragments)),
+            (f, s) if f == s - 1 => Ok(split[0]
+                .parse::<Identifier>()
+                .unwrap()
+                .index_by_fragment(fragments)),
+            _ => Err(()),
+        }
     }
 }
 

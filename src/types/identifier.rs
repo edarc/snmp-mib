@@ -1,5 +1,7 @@
 use std::borrow::Borrow;
+use std::convert::Infallible;
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
+use std::str::FromStr;
 
 use crate::types::{Indexable, OidExpr};
 
@@ -75,6 +77,16 @@ impl Debug for Identifier {
 impl Display for Identifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         write!(f, "{}::{}", self.0, self.1)
+    }
+}
+
+impl FromStr for Identifier {
+    type Err = Infallible;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut split = s.splitn(2, "::").collect::<Vec<_>>();
+        let rest = split.pop().unwrap();
+        let first = split.pop().unwrap_or("");
+        Ok(Identifier::new(first, rest))
     }
 }
 

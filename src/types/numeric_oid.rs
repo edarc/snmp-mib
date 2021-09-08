@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 use std::iter::FromIterator;
 use std::ops::Deref;
 use std::slice::Iter;
+use std::str::FromStr;
 
 use crate::types::{Identifier, Indexable, IntoOidExpr, OidExpr};
 
@@ -46,7 +47,7 @@ use crate::types::{Identifier, Indexable, IntoOidExpr, OidExpr};
 pub struct NumericOid(Vec<u32>);
 
 impl NumericOid {
-    /// Construct a `NumericOid` from a slice of `u32`.
+    /// Construct a `NumericOid` from a sequence of `u32`.
     ///
     /// ```
     /// # use snmp_mib::types::NumericOid;
@@ -57,8 +58,12 @@ impl NumericOid {
     /// let oid_from_slice = NumericOid::new(&a_vec);
     /// assert_eq!(format!("{}", oid_from_slice), "1.3.6.1.4.2");
     /// ```
-    pub fn new(path: impl AsRef<[u32]>) -> Self {
-        NumericOid(path.as_ref().to_vec())
+    pub fn new<I, U>(path: I) -> Self
+    where
+        I: IntoIterator<Item = U>,
+        U: Borrow<u32>,
+    {
+        NumericOid(path.into_iter().map(|u| *u.borrow()).collect())
     }
 
     /// Return the parent numeric OID of `self`.
@@ -167,6 +172,21 @@ impl Indexable for NumericOid {
             .copied()
             .chain(fragment.into_iter().map(|u| *u.borrow()))
             .collect()
+    }
+}
+
+impl FromStr for NumericOid {
+    type Err = std::num::ParseIntError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let split = s.split(".").collect::<Vec<_>>();
+        let parse_results = split.iter().map(|f| f.parse::<u32>()).collect::<Vec<_>>();
+        if let Some(Err(err)) = parse_results.iter().find(|r| r.is_err()) {
+            Err(err.clone())
+        } else {
+            Ok(NumericOid::new(
+                parse_results.into_iter().map(|r| r.unwrap()),
+            ))
+        }
     }
 }
 

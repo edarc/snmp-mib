@@ -1,14 +1,36 @@
-use smallvec::SmallVec;
+use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 
-use crate::types::identifier::{Identifier, IntoIdentifier};
-use crate::types::numeric_oid::NumericOid;
+use smallvec::SmallVec;
+
+use crate::types::{Identifier, IntoIdentifier};
 
 /// Root reference, OID fragment
 #[derive(Clone, Debug, PartialEq)]
 pub struct OidExpr {
-    pub parent: Identifier,
-    pub fragment: SmallVec<[u32; 1]>,
+    parent: Identifier,
+    fragment: SmallVec<[u32; 1]>,
+}
+
+impl OidExpr {
+    pub fn new<I, U>(parent: Identifier, fragment: I) -> Self
+    where
+        I: IntoIterator<Item = U>,
+        U: Borrow<u32>,
+    {
+        Self {
+            parent,
+            fragment: fragment.into_iter().map(|u| *u.borrow()).collect(),
+        }
+    }
+
+    pub fn parent(&self) -> &Identifier {
+        &self.parent
+    }
+
+    pub fn fragment(&self) -> &[u32] {
+        &self.fragment
+    }
 }
 
 impl Display for OidExpr {

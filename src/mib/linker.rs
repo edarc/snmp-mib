@@ -8,7 +8,7 @@ use crate::loader::{QualifiedDecl, TableIndexing};
 use crate::mib::interpretation::{SMIInterpretation, SMIScalar, SMITable};
 use crate::mib::smi_well_known::{SMIWellKnown, SMI_WELL_KNOWN_TYPES};
 use crate::parser::asn_type::{BuiltinType, PlainType, Type};
-use crate::types::{IdentifiedObj, Identifier, NumericOid, OidExpr};
+use crate::types::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
 
 pub(crate) struct Linker {
     numeric_oid_names: SequenceTrie<u32, Identifier>,
@@ -38,10 +38,7 @@ impl Linker {
                 .collect(),
             object_oidexpr_defs: Some((
                 Identifier::new("", "iso"),
-                OidExpr {
-                    parent: Identifier::root(),
-                    fragment: [1].into(),
-                },
+                NumericOid::new([1]).into_oid_expr().unwrap(),
             ))
             .into_iter()
             .collect(),
@@ -143,34 +140,30 @@ impl Linker {
         rel: &BTreeMap<Identifier, OidExpr>,
         abs: &mut BTreeMap<Identifier, NumericOid>,
     ) -> Result<NumericOid, Identifier> {
-        let linked_def = if def.parent.is_root() {
+        let linked_def = if def.parent().is_root() {
             // The parent is root, so this def is linked already.
             def.clone()
-        } else if let Some(parent_fragment) = abs.get(&def.parent) {
+        } else if let Some(parent_fragment) = abs.get(def.parent()) {
             // Parent is linked. Link this one by indexing the parent by this fragment.
-            let this_fragment = parent_fragment.index_by_fragment(&def.fragment);
-            OidExpr {
-                parent: Identifier::root(),
-                fragment: this_fragment.to_vec().into(),
-            }
-        } else if let Some(parent_def) = rel.get(&def.parent) {
+            let this_fragment = parent_fragment.index_by_fragment(def.fragment());
+            NumericOid::new(this_fragment).into_oid_expr().unwrap()
+        } else if let Some(parent_def) = rel.get(def.parent()) {
             // Parent is not linked. Recursively link it first.
             let linked_parent_fragment =
-                Self::link_oidexpr_to_numeric_oid(&def.parent, parent_def, rel, abs)?
-                    .index_by_fragment(&def.fragment);
-            OidExpr {
-                parent: Identifier::root(),
-                fragment: linked_parent_fragment.to_vec().into(),
-            }
+                Self::link_oidexpr_to_numeric_oid(def.parent(), parent_def, rel, abs)?
+                    .index_by_fragment(def.fragment());
+            NumericOid::new(linked_parent_fragment)
+                .into_oid_expr()
+                .unwrap()
         } else {
             // This def's parent is not root, and was in neither the rel or abs maps, so there is
             // no path to root. Throw this def's parent as an Err indicating which identifier is
             // orphaned.
-            return Err(def.parent.clone());
+            return Err(def.parent().clone());
         };
 
-        abs.insert(name.clone(), linked_def.fragment.to_vec().into());
-        Ok(linked_def.fragment.to_vec().into())
+        abs.insert(name.clone(), linked_def.fragment().to_vec().into());
+        Ok(linked_def.fragment().to_vec().into())
     }
 
     pub(crate) fn make_entry(&self, name: &Identifier) -> InternalObjectDescriptor {

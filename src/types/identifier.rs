@@ -1,6 +1,7 @@
+use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 
-use crate::types::IdentifiedObj;
+use crate::types::{IdentifiedObj, OidExpr};
 
 /// Module name, identifier
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -25,6 +26,15 @@ impl Identifier {
 
     pub fn local_name(&self) -> &str {
         &self.1
+    }
+
+    // TODO: Move this to a FragmentIndex trait
+    pub fn index_by_fragment<I, U>(&self, fragment: I) -> OidExpr
+    where
+        I: IntoIterator<Item = U>,
+        U: Borrow<u32>,
+    {
+        OidExpr::new(self.clone(), fragment)
     }
 }
 

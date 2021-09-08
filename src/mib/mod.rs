@@ -81,10 +81,7 @@ impl MIB {
         let parent = self.numeric_oid_names.get(parent_num_oid)?;
         Some((
             parent_num_oid.into(),
-            OidExpr {
-                parent: parent.name.clone(),
-                fragment: fragment.into(),
-            },
+            parent.name.index_by_fragment(fragment),
         ))
     }
 
@@ -97,8 +94,8 @@ impl MIB {
         let expr = expr.into_oid_expr()?;
         let oid = self
             .by_name
-            .get(&expr.parent)?
-            .index_by_fragment(&expr.fragment);
+            .get(expr.parent())?
+            .index_by_fragment(expr.fragment());
         Some(oid)
     }
 
@@ -113,13 +110,13 @@ impl MIB {
         let int_descr = self.numeric_oid_names.get(&parent_num_oid)?;
 
         let interpretation = if let SI::Scalar(cell_scalar) = &int_descr.smi_interpretation {
-            let parent_descr = self.describe_object(&parent_num_oid.parent());
+            let parent_descr = self.describe_object(parent_num_oid.parent());
             if let Some(ObjectDescriptor {
                 smi_interpretation: SI::TableRow(table),
                 ..
             }) = parent_descr
             {
-                let mut fragment = best_expr.fragment.into_iter();
+                let mut fragment = best_expr.fragment().into_iter().copied();
                 println!("{:?}", fragment);
                 let mut instance_indices = vec![];
 

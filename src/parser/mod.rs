@@ -38,10 +38,7 @@ impl RawOidExpr {
     /// as a &str.
     pub(crate) fn qualify(self, resolve: impl Fn(String) -> Identifier) -> OidExpr {
         let name = resolve(self.parent);
-        OidExpr {
-            parent: name,
-            fragment: self.fragment,
-        }
+        OidExpr::new(name, self.fragment)
     }
 }
 

@@ -1,9 +1,24 @@
 use std::fmt::{Debug, Error as FmtError, Formatter};
 use std::ops::Deref;
 
-use crate::types::identifier::Identifier;
-use crate::types::numeric_oid::NumericOid;
+use crate::types::{Identifier, NumericOid};
 
+/// The identifier and numeric OID of an object that is specifically defined in the MIB.
+///
+/// This type pairs an identifier and its defined numeric OID, and is used in a variety of return
+/// values in the `snmp-mib` API where specifically identified objects are referenced.
+///
+/// * `IdentifiedObj` is usable in API surfaces that accept an `impl IntoIdentifier`, as it
+///   directly implements [`IntoIdentifier`][crate::types::IntoIdentifier].
+/// * `IdentifiedObj` is usable in API surfaces that accept a `NumericOid`, as it can be `Deref`ed
+///   as [`NumericOid`].
+/// * `IdentifiedObj` is usable in API surfaces that accept an `impl IntoOidExpr`, as it can be
+///   `Deref`ed as `NumericOid` which in turn implements
+///   [`IntoOidExpr`][crate::types::IntoOidExpr].
+///
+/// Note that `IdentifiedObj` is not user-constructible; the `snmp-mib` crate returns them from
+/// APIs only to maintain the invariant that for any extant `IdentifiedObj`, the identifier and
+/// numeric OID contained are actually equivalent as defined by the MIB.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct IdentifiedObj(pub(super) NumericOid, pub(super) Identifier);
 

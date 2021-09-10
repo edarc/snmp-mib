@@ -24,7 +24,7 @@ use crate::types::{Identifier, Indexable, IntoOidExpr, OidExpr};
 /// # use snmp_mib::types::{NumericOid,IntoOidExpr};
 /// // Conversion to OidExpr
 /// let oid_expr = NumericOid::new([1, 3, 6]).into_oid_expr();
-/// assert_eq!(oid_expr.parent().is_root(), true);
+/// assert_eq!(oid_expr.base_identifier().is_root(), true);
 /// assert_eq!(oid_expr.fragment(), [1, 3, 6]);
 ///
 /// // Deref as &[u32]

@@ -140,24 +140,24 @@ impl Linker {
         rel: &BTreeMap<Identifier, OidExpr>,
         abs: &mut BTreeMap<Identifier, NumericOid>,
     ) -> Result<NumericOid, Identifier> {
-        let linked_def = if def.parent().is_root() {
+        let linked_def = if def.base_identifier().is_root() {
             // The parent is root, so this def is linked already.
             def.clone()
-        } else if let Some(parent_fragment) = abs.get(def.parent()) {
+        } else if let Some(parent_fragment) = abs.get(def.base_identifier()) {
             // Parent is linked. Link this one by indexing the parent by this fragment.
             let this_fragment = parent_fragment.index_by_fragment(def.fragment());
             NumericOid::new(this_fragment).into_oid_expr()
-        } else if let Some(parent_def) = rel.get(def.parent()) {
+        } else if let Some(parent_def) = rel.get(def.base_identifier()) {
             // Parent is not linked. Recursively link it first.
             let linked_parent_fragment =
-                Self::link_oidexpr_to_numeric_oid(def.parent(), parent_def, rel, abs)?
+                Self::link_oidexpr_to_numeric_oid(def.base_identifier(), parent_def, rel, abs)?
                     .index_by_fragment(def.fragment());
             NumericOid::new(linked_parent_fragment).into_oid_expr()
         } else {
             // This def's parent is not root, and was in neither the rel or abs maps, so there is
             // no path to root. Throw this def's parent as an Err indicating which identifier is
             // orphaned.
-            return Err(def.parent().clone());
+            return Err(def.base_identifier().clone());
         };
 
         abs.insert(name.clone(), linked_def.fragment().to_vec().into());

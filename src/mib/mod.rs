@@ -94,7 +94,7 @@ impl MIB {
         let expr = expr.into_oid_expr();
         let oid = self
             .by_name
-            .get(expr.parent())?
+            .get(expr.base_identifier())?
             .index_by_fragment(expr.fragment());
         Some(oid)
     }

@@ -6,29 +6,60 @@ use smallvec::SmallVec;
 
 use crate::types::{Identifier, Indexable};
 
-/// Root reference, OID fragment
+/// An OID expression consisting of a base identifier with an appended numeric fragment.
+///
+/// This permits the expression of OIDs that are descendants of named objects, but which may or may
+/// not themselves have names. Examples of this can be OIDs that are table cells, where the column
+/// OID has a name, but individual cells are defined by dyanmic indices.
+///
+/// There are a number of ways to write expressions to refer to OIDs that `OidExpr` does not
+/// support, for example `OidExpr` does not allow identifiers to appear anywhere except at the
+/// beginning of the expression.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OidExpr {
-    parent: Identifier,
+    base: Identifier,
     fragment: SmallVec<[u32; 1]>,
 }
 
 impl OidExpr {
-    pub fn new<I, U>(parent: Identifier, fragment: I) -> Self
+    /// Construct an OID expression from an [`Identifier`] and an OID fragment.
+    ///
+    /// ```
+    /// # use snmp_mib::types::{OidExpr, Identifier};
+    /// let expr = OidExpr::new(Identifier::new("MY-MODULE", "myObj"), [4, 3]);
+    /// assert_eq!(format!("{}", expr), "MY-MODULE::myObj.4.3");
+    /// ```
+    pub fn new<I, U>(base: Identifier, fragment: I) -> Self
     where
         I: IntoIterator<Item = U>,
         U: Borrow<u32>,
     {
         Self {
-            parent,
+            base,
             fragment: fragment.into_iter().map(|u| *u.borrow()).collect(),
         }
     }
 
-    pub fn parent(&self) -> &Identifier {
-        &self.parent
+    /// Get the base [`Identifier`] from this OID expression.
+    ///
+    /// ```
+    /// # use snmp_mib::types::{OidExpr, Identifier};
+    /// let ident = Identifier::new("MY-MODULE", "myObj");
+    /// let expr = OidExpr::new(ident.clone(), [4, 3]);
+    /// assert_eq!(expr.base_identifier(), &ident);
+    /// ```
+    pub fn base_identifier(&self) -> &Identifier {
+        &self.base
     }
 
+    /// Get the numeric OID fragment from this OID expression.
+    ///
+    /// ```
+    /// # use snmp_mib::types::{OidExpr, Identifier};
+    /// let frag = [4, 3];
+    /// let expr = OidExpr::new(Identifier::new("MY-MODULE", "myObj"), &frag);
+    /// assert_eq!(expr.fragment(), &frag);
+    /// ```
     pub fn fragment(&self) -> &[u32] {
         &self.fragment
     }
@@ -39,7 +70,7 @@ impl Display for OidExpr {
         write!(
             f,
             "{}",
-            Some(&self.parent)
+            Some(&self.base)
                 .iter()
                 .filter(|p| !p.is_root())
                 .map(ToString::to_string)
@@ -106,7 +137,7 @@ impl Indexable for OidExpr {
     {
         let additional_fragment = fragment.into_iter().map(|u| *u.borrow());
         OidExpr::new(
-            self.parent.clone(),
+            self.base.clone(),
             self.fragment.iter().copied().chain(additional_fragment),
         )
     }

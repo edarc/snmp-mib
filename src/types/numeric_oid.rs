@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::slice::Iter;
 use std::str::FromStr;
 
+use crate::error::ParseNumericOidError;
 use crate::types::{Identifier, Indexable, IntoOidExpr, OidExpr};
 
 /// A numeric object identifier.
@@ -176,12 +177,12 @@ impl Indexable for NumericOid {
 }
 
 impl FromStr for NumericOid {
-    type Err = std::num::ParseIntError;
+    type Err = ParseNumericOidError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let split = s.split(".").collect::<Vec<_>>();
         let parse_results = split.iter().map(|f| f.parse::<u32>()).collect::<Vec<_>>();
         if let Some(Err(err)) = parse_results.iter().find(|r| r.is_err()) {
-            Err(err.clone())
+            Err(err.clone().into())
         } else {
             Ok(NumericOid::new(
                 parse_results.into_iter().map(|r| r.unwrap()),

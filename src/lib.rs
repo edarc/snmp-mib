@@ -4,6 +4,7 @@
 //! objects and variable bindings, convert between numeric OIDs and names, and organize collections
 //! of tabular bindings and navigate them as SNMP tables.
 
+pub mod error;
 pub mod loader;
 pub mod mib;
 pub mod parser;

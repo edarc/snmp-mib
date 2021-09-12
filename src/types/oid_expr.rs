@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use smallvec::SmallVec;
 
+use crate::error::ParseOidExprError;
 use crate::types::{Identifier, Indexable};
 
 /// An OID expression consisting of a base identifier with an appended numeric fragment.
@@ -82,15 +83,15 @@ impl Display for OidExpr {
 }
 
 impl FromStr for OidExpr {
-    type Err = ();
+    type Err = ParseOidExprError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let split = s.split(".").collect::<Vec<_>>();
-        let mut fragments = split
+        let parse_results = split.iter().map(|f| f.parse::<u32>()).collect::<Vec<_>>();
+        let mut fragments = parse_results
             .iter()
             .rev()
-            .map(|f| f.parse::<u32>())
             .take_while(|r| r.is_ok())
-            .map(|r| r.unwrap())
+            .map(|r| *r.as_ref().unwrap())
             .collect::<Vec<_>>();
         fragments.reverse();
         match (fragments.len(), split.len()) {
@@ -99,7 +100,15 @@ impl FromStr for OidExpr {
                 .parse::<Identifier>()
                 .unwrap()
                 .index_by_fragment(fragments)),
-            _ => Err(()),
+            // Above two arms not matching guarantees there is at least one error after the first
+            // item in parse_results, *and* the first item (even if it is Err) is never the cause.
+            _ => Err(parse_results
+                .into_iter()
+                .skip(1)
+                .find(|r| r.is_err())
+                .unwrap()
+                .unwrap_err()
+                .into()),
         }
     }
 }
@@ -140,5 +149,79 @@ impl Indexable for OidExpr {
             self.base.clone(),
             self.fragment.iter().copied().chain(additional_fragment),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::ParseOidExprError;
+    use proptest::collection::vec;
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2000))]
+
+        #[test]
+        fn valid_oid_expr_strings_are_parsable(
+            base_name in "[a-zA-Z][a-zA-Z0-9]*",
+            fragment in vec(any::<u32>(), 0..50),
+        ) {
+            let sample = Some(base_name.clone())
+                .into_iter()
+                .chain(fragment.iter().map(|f| f.to_string()))
+                .collect::<Vec<_>>()
+                .join(".");
+            assert_eq!(
+                sample.parse::<OidExpr>().unwrap(),
+                OidExpr::new(base_name.parse().unwrap(), &fragment)
+            );
+        }
+
+        #[test]
+        fn every_oid_expr_display_is_parsable(
+            base_mod_name in "[a-zA-Z][a-zA-Z0-9]*",
+            base_loc_name in "[a-zA-Z][a-zA-Z0-9]*",
+            fragment in vec(any::<u32>(), 0..50),
+        ) {
+            let orig = Identifier::new(base_mod_name, base_loc_name).index_by_fragment(&fragment);
+            assert_eq!(format!("{}", orig).parse::<OidExpr>().unwrap(), orig);
+        }
+    }
+
+    #[test]
+    fn parse_oid_expr_ok() {
+        assert_eq!(
+            "someIdent".parse::<OidExpr>().unwrap(),
+            OidExpr::new("someIdent".parse().unwrap(), None::<u32>)
+        );
+        assert_eq!(
+            "someIdent.4.3".parse::<OidExpr>().unwrap(),
+            OidExpr::new("someIdent".parse().unwrap(), [4, 3])
+        );
+        assert_eq!(
+            "1.3.2".parse::<OidExpr>().unwrap(),
+            OidExpr::new(Identifier::root(), [1, 3, 2])
+        );
+    }
+
+    #[test]
+    fn parse_oid_expr_err() {
+        assert_eq!(
+            "someIdent.fail".parse::<OidExpr>().unwrap_err(),
+            ParseOidExprError::from("fail".parse::<u32>().unwrap_err())
+        );
+        assert_eq!(
+            "someIdent.3.2.1.fail.0".parse::<OidExpr>().unwrap_err(),
+            ParseOidExprError::from("fail".parse::<u32>().unwrap_err())
+        );
+        assert_eq!(
+            "3.2.1.fail".parse::<OidExpr>().unwrap_err(),
+            ParseOidExprError::from("fail".parse::<u32>().unwrap_err())
+        );
+        assert_eq!(
+            "3.fail.2.1.again".parse::<OidExpr>().unwrap_err(),
+            ParseOidExprError::from("fail".parse::<u32>().unwrap_err())
+        );
     }
 }

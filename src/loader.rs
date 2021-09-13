@@ -1,9 +1,9 @@
 //! Loading and parsing SMIv2 MIB module definitions.
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::path::Path;
 
+use crate::error::LoadFileError;
 use crate::parser::asn_type::{BuiltinType, PlainType, Type};
 use crate::parser::{parse_module, ModuleDecl, ParsedModule};
 use crate::types::{Identifier, OidExpr};
@@ -193,14 +193,13 @@ impl Loader {
     /// Load a MIB module from a file.
     ///
     /// This can be called repeatedly to load multiple MIB modules prior to compiling into a MIB.
-    pub fn load_file(&mut self, path: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+    pub fn load_file(&mut self, path: impl AsRef<Path>) -> Result<(), LoadFileError> {
         let module_name_fixups = vec![("RFC-1213".to_string(), "RFC1213-MIB".to_string())]
             .into_iter()
             .collect::<HashMap<_, _>>();
 
         let file = String::from_utf8(std::fs::read(path.as_ref())?)?;
-        let (_, ParsedModule(this_module, mut decls)) =
-            parse_module(&file).map_err(|e| e.to_string())?;
+        let (_, ParsedModule(this_module, mut decls)) = parse_module(&file)?;
 
         // Find the index of every Imports decl.
         let import_idxs = decls

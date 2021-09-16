@@ -14,6 +14,7 @@ use std::fmt::Debug;
 
 use sequence_trie::SequenceTrie;
 
+use crate::error::LookupError;
 use crate::loader::Loader;
 use crate::mib::linker::{InternalObjectDescriptor, Linker};
 use crate::parser::asn_type::Type;
@@ -55,8 +56,8 @@ pub struct ObjectDescriptor {
 /// utilizing the compiled information.
 #[derive(Clone, Debug)]
 pub struct MIB {
-    numeric_oid_names: SequenceTrie<u32, InternalObjectDescriptor>,
-    by_name: BTreeMap<Identifier, NumericOid>,
+    oid_descriptor_tree: SequenceTrie<u32, InternalObjectDescriptor>,
+    identifier_table: BTreeMap<Identifier, Result<NumericOid, LookupError>>,
 }
 
 impl MIB {
@@ -68,18 +69,26 @@ impl MIB {
     /// parent will be whichever identifier known to this MIB matches the largest prefix of the
     /// given `OidExpr`. The fragment will contain any suffix for which the MIB does not define a
     /// name.
-    pub fn lookup_best_oidexpr(&self, expr: impl IntoOidExpr) -> Option<OidExpr> {
+    pub fn lookup_best_oidexpr(&self, expr: impl IntoOidExpr) -> Result<OidExpr, LookupError> {
         let num_oid = self.lookup_numeric_oid(expr)?;
         self.lookup_best_oidexpr_internal(&num_oid)
             .map(|(_, oidexpr)| oidexpr)
     }
 
-    fn lookup_best_oidexpr_internal(&self, num_oid: &NumericOid) -> Option<(NumericOid, OidExpr)> {
+    fn lookup_best_oidexpr_internal(
+        &self,
+        num_oid: &NumericOid,
+    ) -> Result<(NumericOid, OidExpr), LookupError> {
         // Decrement to skip the root.
-        let prefix_len = self.numeric_oid_names.prefix_iter(num_oid).count() - 1;
+        let prefix_len = self.oid_descriptor_tree.prefix_iter(num_oid).count() - 1;
         let (parent_num_oid, fragment) = num_oid.split_at(prefix_len);
-        let parent = self.numeric_oid_names.get(parent_num_oid)?;
-        Some((
+        let parent = self
+            .oid_descriptor_tree
+            .get(parent_num_oid)
+            .ok_or_else(|| LookupError::NoSuchNumericOID {
+                oid: parent_num_oid.into(),
+            })?;
+        Ok((
             parent_num_oid.into(),
             parent.name.index_by_fragment(fragment),
         ))
@@ -90,72 +99,101 @@ impl MIB {
     ///
     /// While any named identifiers in the OID expression must be known to this MIB, the exact
     /// object referred to by some or all of a numeric suffix need not be.
-    pub fn lookup_numeric_oid(&self, expr: impl IntoOidExpr) -> Option<NumericOid> {
+    pub fn lookup_numeric_oid(&self, expr: impl IntoOidExpr) -> Result<NumericOid, LookupError> {
         let expr = expr.into_oid_expr();
         let oid = self
-            .by_name
-            .get(expr.base_identifier())?
+            .identifier_table
+            .get(expr.base_identifier())
+            .ok_or_else(|| LookupError::NoSuchIdentifier {
+                identifier: expr.base_identifier().clone(),
+            })?
+            .as_ref()
+            .map_err(Clone::clone)?
             .index_by_fragment(expr.fragment());
-        Some(oid)
+        Ok(oid)
     }
 
     /// Look up a descriptor for an object identified by (anything convertible to) an [`OidExpr`].
     ///
     /// See [`ObjectDescriptor`] for details.
-    pub fn describe_object(&self, expr: impl IntoOidExpr) -> Option<ObjectDescriptor> {
+    pub fn describe_object(&self, expr: impl IntoOidExpr) -> Result<ObjectDescriptor, LookupError> {
         use SMIInterpretation as SI;
 
         let num_oid = self.lookup_numeric_oid(expr)?;
         let (parent_num_oid, best_expr) = self.lookup_best_oidexpr_internal(&num_oid)?;
-        let int_descr = self.numeric_oid_names.get(&parent_num_oid)?;
+        let internal_descr = self.oid_descriptor_tree.get(&parent_num_oid).expect(
+            "lookup_best_oidexpr_internal guarantees parent_num_oid can be gotten from \
+             oid_descriptor_tree",
+        );
 
-        let interpretation = if let SI::Scalar(cell_scalar) = &int_descr.smi_interpretation {
-            let parent_descr = self.describe_object(parent_num_oid.parent());
-            if let Some(ObjectDescriptor {
-                smi_interpretation: SI::TableRow(table),
-                ..
-            }) = parent_descr
-            {
-                let mut fragment = best_expr.fragment().into_iter().copied();
-                println!("{:?}", fragment);
-                let mut instance_indices = vec![];
-
-                for (index, encoding) in table.index_fields.iter() {
-                    let decoded_value = match table.field_interpretation.get(&index) {
-                        Some(SI::Scalar(scalar_type)) => {
-                            match scalar_type.decode_from_num_oid(&mut fragment, *encoding) {
-                                Some(TableIndexValue::ObjectIdentifier(oidexpr)) => {
-                                    TableIndexValue::ObjectIdentifier(
-                                        self.lookup_best_oidexpr(&oidexpr).unwrap_or(oidexpr),
-                                    )
-                                }
-                                Some(scalar_val) => scalar_val,
-                                None => break,
-                            }
-                        }
-
-                        _ => return None,
-                    };
-                    instance_indices.push((index.clone(), decoded_value));
+        let interpretation = if let SI::Scalar(cell_scalar) = &internal_descr.smi_interpretation {
+            // If the internal descriptor's interpretation is a Scalar, check the interpretation of
+            // the parent OID. It might be a TableRow, in which case the interpretation of this is
+            // not just Scalar but specifically a TableCell.
+            match self.describe_object(parent_num_oid.parent()) {
+                Ok(ObjectDescriptor {
+                    smi_interpretation: SI::TableRow(table),
+                    ..
+                }) => {
+                    // The parent is a TableRow, so decode any table index values that are present in
+                    // the fragment and re-interpret this as TableCell.
+                    let fragment = best_expr.fragment().into_iter().copied();
+                    let instance_indices = self.decode_table_cell_indices(fragment, &table)?;
+                    SI::TableCell(SMITableCell {
+                        cell_interpretation: cell_scalar.clone(),
+                        table,
+                        instance_indices,
+                    })
                 }
-
-                SI::TableCell(SMITableCell {
-                    cell_interpretation: cell_scalar.clone(),
-                    table,
-                    instance_indices,
-                })
-            } else {
-                int_descr.smi_interpretation.clone()
+                _ => internal_descr.smi_interpretation.clone(),
             }
         } else {
-            int_descr.smi_interpretation.clone()
+            internal_descr.smi_interpretation.clone()
         };
 
-        Some(ObjectDescriptor {
-            object: IdentifiedObj::new(parent_num_oid, int_descr.name.clone()),
-            declared_type: int_descr.declared_type.clone(),
+        Ok(ObjectDescriptor {
+            object: IdentifiedObj::new(parent_num_oid, internal_descr.name.clone()),
+            declared_type: internal_descr.declared_type.clone(),
             smi_interpretation: interpretation,
         })
+    }
+
+    fn decode_table_cell_indices(
+        &self,
+        mut fragment: impl Iterator<Item = u32>,
+        table: &SMITable,
+    ) -> Result<Vec<(IdentifiedObj, TableIndexValue)>, LookupError> {
+        use SMIInterpretation as SI;
+
+        let mut instance_indices = vec![];
+
+        for (index, encoding) in table.index_fields.iter() {
+            let decoded_value = match table.field_interpretation.get(&index) {
+                Some(SI::Scalar(scalar_type)) => {
+                    match scalar_type.decode_from_num_oid(&mut fragment, *encoding) {
+                        Some(TableIndexValue::ObjectIdentifier(oidexpr)) => {
+                            TableIndexValue::ObjectIdentifier(
+                                self.lookup_best_oidexpr(&oidexpr).unwrap_or(oidexpr),
+                            )
+                        }
+                        Some(scalar_val) => scalar_val,
+                        None => break,
+                    }
+                }
+                Some(non_scalar_type) => {
+                    return Err(LookupError::NonScalarTableIndex {
+                        object: index.clone(),
+                        interpretation: non_scalar_type.clone(),
+                    })
+                }
+                None => unreachable!(
+                    "Linker::interpret_table guarantees index_fields never contains keys that \
+                     aren't in field_interpretation"
+                ),
+            };
+            instance_indices.push((index.clone(), decoded_value));
+        }
+        Ok(instance_indices)
     }
 }
 
@@ -163,17 +201,26 @@ impl From<Loader> for MIB {
     fn from(loader: Loader) -> Self {
         let linker = Linker::new(loader.0);
 
-        let mut numeric_oid_names = SequenceTrie::new();
-        let mut by_name = BTreeMap::new();
+        let mut oid_descriptor_tree = SequenceTrie::new();
+        let mut identifier_table = BTreeMap::new();
 
         for (name, oid) in linker.object_numeric_oids.iter() {
-            numeric_oid_names.insert(oid, linker.make_entry(&name));
-            by_name.insert(name.clone(), oid.clone());
+            oid_descriptor_tree.insert(oid, linker.make_entry(&name));
+            identifier_table.insert(name.clone(), Ok(oid.clone()));
+        }
+
+        for (name, orphan_name) in linker.orphan_identifiers {
+            identifier_table.insert(
+                name,
+                Err(LookupError::OrphanIdentifier {
+                    identifier: orphan_name,
+                }),
+            );
         }
 
         Self {
-            numeric_oid_names,
-            by_name,
+            oid_descriptor_tree,
+            identifier_table,
         }
     }
 }

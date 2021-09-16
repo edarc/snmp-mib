@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use sequence_trie::SequenceTrie;
@@ -16,7 +16,7 @@ pub(crate) struct Linker {
     pub(crate) object_numeric_oids: BTreeMap<Identifier, NumericOid>,
     object_oidexpr_defs: BTreeMap<Identifier, OidExpr>,
     object_uoms: BTreeMap<Identifier, String>,
-    orphan_identifiers: BTreeSet<Identifier>,
+    pub(crate) orphan_identifiers: BTreeMap<Identifier, Identifier>,
     type_defs: BTreeMap<Identifier, Type<Identifier>>,
     type_interpretation_cache: RefCell<BTreeMap<Identifier, SMIInterpretation>>,
 }
@@ -43,7 +43,7 @@ impl Linker {
             .into_iter()
             .collect(),
             object_uoms: BTreeMap::new(),
-            orphan_identifiers: BTreeSet::new(),
+            orphan_identifiers: BTreeMap::new(),
             type_defs: BTreeMap::new(),
             type_interpretation_cache: RefCell::new(BTreeMap::new()),
         }
@@ -99,7 +99,7 @@ impl Linker {
                     new.numeric_oid_names.insert(&oid, name.clone());
                 }
                 Err(orphan) => {
-                    new.orphan_identifiers.insert(orphan);
+                    new.orphan_identifiers.insert(name.clone(), orphan);
                 }
             }
         }

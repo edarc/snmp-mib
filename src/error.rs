@@ -4,6 +4,9 @@ use std::num::ParseIntError;
 
 use thiserror::Error;
 
+use crate::mib::SMIInterpretation;
+use crate::types::{IdentifiedObj, Identifier, NumericOid};
+
 /// A failure to parse an [`OidExpr`][crate::types::OidExpr].
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Can't parse OID expression")]
@@ -66,4 +69,31 @@ mod load_file_error {
             }
         }
     }
+}
+
+/// A failure to look up some object in the MIB.
+#[derive(Error, Debug, Clone)]
+pub enum LookupError {
+    /// An identifier was referenced in an OID definition which was not defined in any other loaded
+    /// module. Anything defined (directly or transitively) in terms of that identifier will be
+    /// dropped from the MIB.
+    #[error("Can't resolve identifier `{identifier}` referenced in OID definition")]
+    OrphanIdentifier { identifier: Identifier },
+
+    /// A numeric OID was not defined by any modules loaded into the MIB.
+    #[error("No such numeric OID defined in the MIB: {oid}")]
+    NoSuchNumericOID { oid: NumericOid },
+
+    /// An identifier was not defined by any modules loaded into the MIB.
+    #[error("No such identifier defined in the MIB: `{identifier}`")]
+    NoSuchIdentifier { identifier: Identifier },
+
+    /// An SMI table is malformed due to a column mentioned in its `INDEX` (or the `INDEX` of the
+    /// table referenced by `AUGMENTS`) having a non-scalar SMI interpretation. Such columns are
+    /// not encodable as an OID fragment.
+    #[error("Malformed SMI table: index field {object:?} is non-scalar: {interpretation:?}")]
+    NonScalarTableIndex {
+        object: IdentifiedObj,
+        interpretation: SMIInterpretation,
+    },
 }

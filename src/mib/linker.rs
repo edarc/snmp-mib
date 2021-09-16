@@ -243,7 +243,7 @@ impl Linker {
         match &decl_type.ty {
             PI::Builtin(BI::SequenceOf(elem_type)) => match &elem_type.ty {
                 PI::Referenced(referent_name, _) => {
-                    if self.match_sequence_type(&elem_type).is_some() {
+                    if self.get_fields_if_sequence_type(&elem_type).is_some() {
                         // A SEQUENCE OF some referenced type which is effectively a SEQUENCE is an
                         // SNMP table.
                         if let Some(smi_table) = self.interpret_table(name, referent_name) {
@@ -340,7 +340,7 @@ impl Linker {
         let (fragment, table_entry_name) = table_subtrie.iter().nth(1)?;
         let entry_num_oid = table_num_oid.index_by_fragment(fragment);
 
-        let table_fields = self.interpret_table_fields(&table_entry_name)?;
+        let field_interpretation = self.interpret_table_fields(&table_entry_name)?;
 
         let effective_index_fields = match self.object_indexes.get(&table_entry_name)? {
             TableIndexing::Index(cols) => cols,
@@ -365,7 +365,7 @@ impl Linker {
             table_object: IdentifiedObj::new(table_num_oid.clone(), table_name.clone()),
             entry_object: IdentifiedObj::new(entry_num_oid, table_entry_name.clone()),
             entry_type_name: entry_type_name.clone(),
-            field_interpretation: table_fields,
+            field_interpretation,
             index_fields,
         })
     }
@@ -376,7 +376,7 @@ impl Linker {
     ) -> Option<BTreeMap<IdentifiedObj, SMIInterpretation>> {
         let table_entry_type = self.find_effective_type(self.type_defs.get(table_entry_name)?)?;
         let table_fields = self
-            .match_sequence_type(&table_entry_type)?
+            .get_fields_if_sequence_type(&table_entry_type)?
             .into_iter()
             // Nearly always, each SEQUENCE field identifier is the same as some OBJECT-TYPE
             // definition that has the "best" type information, so we look up that identifier in
@@ -411,7 +411,7 @@ impl Linker {
         self.interpret_table(table_name, entry_type_name)
     }
 
-    fn match_sequence_type(
+    fn get_fields_if_sequence_type(
         &self,
         ty: &Type<Identifier>,
     ) -> Option<Vec<(Identifier, Type<Identifier>)>> {

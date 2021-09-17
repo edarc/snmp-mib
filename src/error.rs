@@ -4,7 +4,7 @@ use std::num::ParseIntError;
 
 use thiserror::Error;
 
-use crate::mib::SMIInterpretation;
+use crate::mib::{SMIInterpretation, SMIScalar};
 use crate::types::{IdentifiedObj, Identifier, NumericOid};
 
 /// A failure to parse an [`OidExpr`][crate::types::OidExpr].
@@ -88,12 +88,44 @@ pub enum LookupError {
     #[error("No such identifier defined in the MIB: `{identifier}`")]
     NoSuchIdentifier { identifier: Identifier },
 
+    /// An object which refers to an SMI table cell had an index field that could not be decoded.
+    #[error("Table cell index field can't be decoded")]
+    IndexNotDecodable {
+        object: IdentifiedObj,
+        source: IndexDecodeError,
+    },
+}
+
+/// A failure to decode an index value from an OID fragment.
+#[derive(Error, Debug, Clone)]
+pub enum IndexDecodeError {
     /// An SMI table is malformed due to a column mentioned in its `INDEX` (or the `INDEX` of the
     /// table referenced by `AUGMENTS`) having a non-scalar SMI interpretation. Such columns are
     /// not encodable as an OID fragment.
-    #[error("Malformed SMI table: index field {object:?} is non-scalar: {interpretation:?}")]
-    NonScalarTableIndex {
-        object: IdentifiedObj,
-        interpretation: SMIInterpretation,
-    },
+    #[error("Index field is non-scalar: {interpretation:?}")]
+    NonScalarType { interpretation: SMIInterpretation },
+
+    /// An SMI table is malformed due to a column mentioned in its `INDEX` (or the `INDEX` of the
+    /// table referenced by `AUGMENTS`) having a scalar type which doesn't have a encoding as a
+    /// numeric OID fragment. This is either a bad MIB module definition or a bug.
+    #[error("Index field has type with no defined index encoding: {scalar_type:?}")]
+    UnsupportedScalarType { scalar_type: SMIScalar },
+
+    /// The OID contained an InetAddress whose address family (v4 or v6) could not be determined.
+    #[error("Internet address index value has unrecognized address family ({len} octets)")]
+    UnrecognizedInetAddrFamily { len: usize },
+
+    /// The index was an enum but the encoded value does not match any of the variants.
+    #[error("Unknown enumeration variant {val}")]
+    UnknownEnumVariant { val: u32 },
+
+    /// An index's value was incomplete, i.e. the remaining OID fragment was shorter than expected.
+    /// This error does not occur if the index's value is completely omitted, only if there were
+    /// *some* elements in the OID fragment but not enough to correctly decode the value.
+    #[error("Incomplete index value, expected {expect_len} got {got_len} OID elements")]
+    IncompleteValue { expect_len: usize, got_len: usize },
+
+    /// An index which expected only octet-range (0..256) values got a value outside that range.
+    #[error("Index expected octet encoding, got out-of-range element {val}")]
+    InvalidOctet { val: u32 },
 }

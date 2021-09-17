@@ -14,7 +14,7 @@ use std::fmt::Debug;
 
 use sequence_trie::SequenceTrie;
 
-use crate::error::LookupError;
+use crate::error::{IndexDecodeError, LookupError};
 use crate::loader::Loader;
 use crate::mib::linker::{InternalObjectDescriptor, Linker};
 use crate::parser::asn_type::Type;
@@ -171,19 +171,27 @@ impl MIB {
             let decoded_value = match table.field_interpretation.get(&index) {
                 Some(SI::Scalar(scalar_type)) => {
                     match scalar_type.decode_from_num_oid(&mut fragment, *encoding) {
-                        Some(TableIndexValue::ObjectIdentifier(oidexpr)) => {
+                        Ok(Some(TableIndexValue::ObjectIdentifier(oidexpr))) => {
                             TableIndexValue::ObjectIdentifier(
                                 self.lookup_best_oidexpr(&oidexpr).unwrap_or(oidexpr),
                             )
                         }
-                        Some(scalar_val) => scalar_val,
-                        None => break,
+                        Ok(Some(scalar_val)) => scalar_val,
+                        Ok(None) => break,
+                        Err(e) => {
+                            return Err(LookupError::IndexNotDecodable {
+                                source: e,
+                                object: index.clone(),
+                            })
+                        }
                     }
                 }
                 Some(non_scalar_type) => {
-                    return Err(LookupError::NonScalarTableIndex {
+                    return Err(LookupError::IndexNotDecodable {
                         object: index.clone(),
-                        interpretation: non_scalar_type.clone(),
+                        source: IndexDecodeError::NonScalarType {
+                            interpretation: non_scalar_type.clone(),
+                        },
                     })
                 }
                 None => unreachable!(

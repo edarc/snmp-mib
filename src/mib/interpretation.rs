@@ -4,6 +4,7 @@ use std::fmt::Debug;
 
 use num::BigInt;
 
+use crate::error::IndexDecodeError;
 use crate::mib::smi_well_known::SMIWellKnown;
 use crate::types::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
 
@@ -441,79 +442,119 @@ impl SMIScalar {
         &self,
         mut fragment_iter: impl Iterator<Item = u32>,
         _encoding: TableIndexEncoding,
-    ) -> Option<TableIndexValue> {
+    ) -> Result<Option<TableIndexValue>, IndexDecodeError> {
         use InetAddressEncoding as Enc;
         use SMIScalar as SS;
         use TableIndexValue as TIV;
         match self {
-            SS::Bits(_names) => None,
-            SS::Bytes => None,
-            SS::Counter(_) => None,
             SS::Enumeration(variants) => {
-                let value = fragment_iter.next()?.into();
-                let name = variants.get(&value)?;
-                Some(TIV::EnumVariant(value, name.to_string()))
+                if let Some(value) = fragment_iter.next() {
+                    let bigint_value = value.into();
+                    let name = variants
+                        .get(&bigint_value)
+                        .ok_or_else(|| IndexDecodeError::UnknownEnumVariant { val: value })?;
+                    Ok(Some(TIV::EnumVariant(bigint_value, name.to_string())))
+                } else {
+                    Ok(None)
+                }
             }
-            SS::Gauge(_) => None,
-            SS::Integer(_) => fragment_iter.next().map(|v| TIV::Integer(v.into())),
+            SS::Integer(_) => Ok(fragment_iter.next().map(|v| TIV::Integer(v.into()))),
             SS::InetAddress(encoding) => match encoding {
                 Enc::RFC1155 => Self::decode_ipv4_from_num_oid(fragment_iter),
                 Enc::RFC3291 => {
-                    // TODO: This is a terrible heuristic.
-                    let bytes = Self::decode_bytes_from_num_oid(fragment_iter)?;
-                    match bytes.len() {
-                        4 => {
+                    match Self::decode_bytes_from_num_oid(fragment_iter) {
+                        // TODO: This is a terrible heuristic.
+                        Ok(Some(bytes)) if bytes.len() == 4 => {
                             let mut octets = [0u8; 4];
                             octets.copy_from_slice(&bytes);
-                            Some(TIV::InetAddress(InetAddress::IP(octets.into())))
+                            Ok(Some(TIV::InetAddress(InetAddress::IP(octets.into()))))
                         }
-                        16 => {
+                        Ok(Some(bytes)) if bytes.len() == 16 => {
                             let mut octets = [0u8; 16];
                             octets.copy_from_slice(&bytes);
-                            Some(TIV::InetAddress(InetAddress::IP(octets.into())))
+                            Ok(Some(TIV::InetAddress(InetAddress::IP(octets.into()))))
                         }
-                        _ => None,
+                        Ok(Some(bytes)) => {
+                            Err(IndexDecodeError::UnrecognizedInetAddrFamily { len: bytes.len() })
+                        }
+                        Ok(None) => Ok(None),
+                        Err(e) => Err(e),
                     }
                 }
             },
-            SS::ObjectIdentifier => {
-                let fragment = Self::decode_length_encoded_from_num_oid(fragment_iter)?;
-                let oidexpr = NumericOid::from(fragment).into_oid_expr();
-                Some(TIV::ObjectIdentifier(oidexpr))
+            SS::ObjectIdentifier => match Self::decode_length_encoded_from_num_oid(fragment_iter) {
+                Ok(Some(fragment)) => Ok(Some(TIV::ObjectIdentifier(
+                    NumericOid::from(fragment).into_oid_expr(),
+                ))),
+                Ok(None) => Ok(None),
+                Err(e) => Err(e),
+            },
+            SS::Bits(_) | SS::Bytes | SS::Counter(_) | SS::Gauge(_) | SS::Text | SS::TimeTicks => {
+                Err(IndexDecodeError::UnsupportedScalarType {
+                    scalar_type: self.clone(),
+                })
             }
-            SS::Text => None,
-            SS::TimeTicks => None,
         }
     }
 
     fn decode_ipv4_from_num_oid(
         fragment_iter: impl Iterator<Item = u32>,
-    ) -> Option<TableIndexValue> {
+    ) -> Result<Option<TableIndexValue>, IndexDecodeError> {
         use TableIndexValue as TIV;
         let mut octet_iter = fragment_iter.take(4);
         let mut octets = [0u8; 4];
-        // TODO: Handle try_into failing or iterator coming up short.
-        octets.fill_with(|| {
-            octet_iter
-                .next()
-                .and_then(|v| v.try_into().ok())
-                .unwrap_or(0)
-        });
-        Some(TIV::InetAddress(InetAddress::IP(octets.into())))
+        for (i, addr_octet) in octets.iter_mut().enumerate() {
+            if let Some(encoded_val) = octet_iter.next() {
+                *addr_octet = encoded_val
+                    .try_into()
+                    .map_err(|_| IndexDecodeError::InvalidOctet { val: encoded_val })?;
+            } else if i == 0 {
+                return Ok(None);
+            } else {
+                return Err(IndexDecodeError::IncompleteValue {
+                    expect_len: 4,
+                    got_len: i,
+                });
+            }
+        }
+        Ok(Some(TIV::InetAddress(InetAddress::IP(octets.into()))))
     }
 
-    fn decode_bytes_from_num_oid(fragment_iter: impl Iterator<Item = u32>) -> Option<Vec<u8>> {
-        Self::decode_length_encoded_from_num_oid(fragment_iter).map(|vals| {
-            vals.into_iter()
-                .filter_map(|val| val.try_into().ok())
-                .collect()
-        })
+    fn decode_bytes_from_num_oid(
+        fragment_iter: impl Iterator<Item = u32>,
+    ) -> Result<Option<Vec<u8>>, IndexDecodeError> {
+        match Self::decode_length_encoded_from_num_oid(fragment_iter) {
+            Ok(Some(encoded_vals)) => {
+                let mut result = Vec::with_capacity(encoded_vals.len());
+                for val in encoded_vals {
+                    result.push(
+                        val.try_into()
+                            .map_err(|_| IndexDecodeError::InvalidOctet { val })?,
+                    );
+                }
+                Ok(Some(result))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     fn decode_length_encoded_from_num_oid(
         mut fragment_iter: impl Iterator<Item = u32>,
-    ) -> Option<Vec<u32>> {
-        let count = fragment_iter.next()?;
-        Some(fragment_iter.take(count.try_into().ok()?).collect())
+    ) -> Result<Option<Vec<u32>>, IndexDecodeError> {
+        if let Some(count) = fragment_iter.next() {
+            let count = count.try_into().expect("usize should hold a u32");
+            let result = fragment_iter.take(count).collect::<Vec<_>>();
+            if result.len() == count {
+                Ok(Some(result))
+            } else {
+                Err(IndexDecodeError::IncompleteValue {
+                    expect_len: count,
+                    got_len: result.len(),
+                })
+            }
+        } else {
+            Ok(None)
+        }
     }
 }

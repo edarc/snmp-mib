@@ -159,4 +159,12 @@ mod tests {
         parse_ok!(unsigned, "'  01 ff 'h", 0x1FF);
         parse_ok!(unsigned, "'   0001 1111 'b", 0x1F);
     }
+
+    #[test]
+    fn quoted_strings() {
+        parse_ok!(quoted_string, r#""foo ""#, "foo ");
+        parse_ok!(quoted_string, r#"" foo""#, " foo");
+        parse_ok!(quoted_string, r#"" foo ""#, " foo ");
+        parse_ok!(quoted_string, r#""foo""#, "foo");
+    }
 }

@@ -14,7 +14,7 @@ use std::fmt::Debug;
 
 use sequence_trie::SequenceTrie;
 
-use crate::error::{IndexDecodeError, LookupError};
+use crate::error::{IndexDecodeError, InterpretationError, LookupError};
 use crate::loader::Loader;
 use crate::mib::linker::{InternalObjectDescriptor, Linker};
 use crate::parser::asn_type::Type;
@@ -44,9 +44,13 @@ pub struct ObjectDescriptor {
 
     /// The interpretation of this field in terms of SMI.
     ///
-    /// The SMI interpretation is a value describing the meaning of the declared type of this
-    /// object, after dereferencing and expansion of the declared ASN.1 type.
-    pub smi_interpretation: SMIInterpretation,
+    /// When this is `Ok(i)`, `i` is the SMI interpretation --- a value describing the meaning of
+    /// the object's type (dereferencing and expanding the declared ASN.1 type) and context
+    /// (examining the object's parent to determine if it is a component of any tables).
+    ///
+    /// If the object is unable to be interpreted, this will be `Err(e)` where `e` describes the
+    /// reason for the object being uninterpretable.
+    pub smi_interpretation: Result<SMIInterpretation, InterpretationError>,
 }
 
 /// An SNMP Management Information Base.
@@ -126,24 +130,25 @@ impl MIB {
              oid_descriptor_tree",
         );
 
-        let interpretation = if let SI::Scalar(cell_scalar) = &internal_descr.smi_interpretation {
+        let interpretation = if let Ok(SI::Scalar(cell_scalar)) = &internal_descr.smi_interpretation
+        {
             // If the internal descriptor's interpretation is a Scalar, check the interpretation of
             // the parent OID. It might be a TableRow, in which case the interpretation of this is
             // not just Scalar but specifically a TableCell.
             match self.describe_object(parent_num_oid.parent()) {
                 Ok(ObjectDescriptor {
-                    smi_interpretation: SI::TableRow(table),
+                    smi_interpretation: Ok(SI::TableRow(table)),
                     ..
                 }) => {
                     // The parent is a TableRow, so decode any table index values that are present in
                     // the fragment and re-interpret this as TableCell.
                     let fragment = best_expr.fragment().into_iter().copied();
                     let instance_indices = self.decode_table_cell_indices(fragment, &table)?;
-                    SI::TableCell(SMITableCell {
+                    Ok(SI::TableCell(SMITableCell {
                         cell_interpretation: cell_scalar.clone(),
                         table,
                         instance_indices,
-                    })
+                    }))
                 }
                 _ => internal_descr.smi_interpretation.clone(),
             }
@@ -212,9 +217,10 @@ impl From<Loader> for MIB {
         let mut oid_descriptor_tree = SequenceTrie::new();
         let mut identifier_table = BTreeMap::new();
 
-        for (name, oid) in linker.object_numeric_oids.iter() {
-            oid_descriptor_tree.insert(oid, linker.make_entry(&name));
-            identifier_table.insert(name.clone(), Ok(oid.clone()));
+        for (name, num_oid) in linker.object_numeric_oids.iter() {
+            let entry = linker.make_entry(&name, num_oid);
+            oid_descriptor_tree.insert(num_oid, entry);
+            identifier_table.insert(name.clone(), Ok(num_oid.clone()));
         }
 
         for (name, orphan_name) in linker.orphan_identifiers {

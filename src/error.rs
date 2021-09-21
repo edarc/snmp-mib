@@ -5,6 +5,7 @@ use std::num::ParseIntError;
 use thiserror::Error;
 
 use crate::mib::{SMIInterpretation, SMIScalar};
+use crate::parser::BuiltinType;
 use crate::types::{IdentifiedObj, Identifier, NumericOid};
 
 /// A failure to parse an [`OidExpr`][crate::types::OidExpr].
@@ -128,4 +129,50 @@ pub enum IndexDecodeError {
     /// An index which expected only octet-range (0..256) values got a value outside that range.
     #[error("Index expected octet encoding, got out-of-range element {val}")]
     InvalidOctet { val: u32 },
+}
+
+/// A failure to interpret a MIB object as an SMI concept.
+#[derive(Error, Debug, Clone)]
+pub enum InterpretationError {
+    /// This object is a leaf object (has no descendant OIDs), but also does not have any defined
+    /// type, meaning it is neither an OID namespace nor a concrete entity.
+    #[error("Leaf (non-namespace) object has no type")]
+    UntypedLeafObject,
+
+    /// This object's type is a `SEQUENCE OF` some referenced type, suggesting it is an SMI table,
+    /// but the referent has a type which is not a `SEQUENCE`.
+    #[error("SEQUENCE OF referenced type {referent}, which is not a SEQUENCE")]
+    InvalidSequenceOfReferent { referent: Identifier },
+
+    /// This object's type is a `SEQUENCE OF` a built-in type, which has no meaning in SMI.
+    #[error("SEQUENCE OF built-in type {element_type:?} has no SMI interpretation")]
+    InvalidSequenceOfBuiltin {
+        element_type: BuiltinType<Identifier>,
+    },
+
+    /// This object's type resolves to a referenced type, but it is not a well-known type. Either
+    /// the type is not defined in any module loaded in the MIB, or a well-known type is missing
+    /// from `snmp-mib`.
+    #[error("Referenced type {referent} is not well-known nor defined by any loaded module")]
+    UnresolvableReferencedType { referent: Identifier },
+
+    /// The object, or a component of the object, requires a numeric OID but does not define one.
+    #[error("Object {name} has no OID")]
+    MissingNumericOID { name: Identifier },
+
+    /// The object is a table, but one of the fields is an object without a declared type.
+    #[error("Table field {field_name} has no type")]
+    MissingTableFieldType { field_name: Identifier },
+
+    /// The object is a table, but the table entry object cannot be found.
+    #[error("Table entry cannot be found for table: {table:?}")]
+    MissingTableEntry { table: IdentifiedObj },
+
+    /// This object is a table using `AUGMENTS`, but the referent refers either to a non-table
+    /// object, or to a table that does not have an `INDEX`.
+    #[error("AUGMENTS {target} not valid: must reference a table with INDEX")]
+    TableAugmentsTargetBad { target: Identifier },
+
+    #[error("Legacy -- to be removed")]
+    LegacyUnknown,
 }

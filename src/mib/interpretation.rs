@@ -14,9 +14,6 @@ use crate::types::{IdentifiedObj, Identifier, IntoOidExpr, NumericOid, OidExpr};
 /// namespaces, scalars, tables, table rows, and table cells. These logical concepts are expressed
 /// by patterns in their MIB module ASN.1 definitions, which `snmp-mib` recognizes and translates
 /// into a higher-level `SMIInterpretation`.
-///
-/// Other kinds of things may exist in the MIB module declaration which are valid ASN.1, but either
-/// don't have an SMI interpretation or aren't (yet) supported by this crate; these are `Unknown`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SMIInterpretation {
     /// The object is interpretable as an OID namespace. The data member is a set of
@@ -67,10 +64,6 @@ pub enum SMIInterpretation {
     /// values for the table indices decoded from the object's OID. See that type for details and
     /// an example.
     TableCell(SMITableCell),
-
-    /// The object doesn't have an interpretation in SMI, or its interpretation is not (yet)
-    /// supported or recognized by this crate.
-    Unknown,
 }
 
 /// Describes an SMI scalar value.

@@ -19,13 +19,24 @@ use nom::{
 /// This requires that every entry in the definition except the first either be a plain integer, or
 /// a name with an associated integer like `dod(2)`.
 fn oid_expr(input: &str) -> IResult<&str, RawOidExpr> {
-    let oid_elem = alt((
-        unsigned,
-        delimited(pair(identifier, sym("(")), unsigned, sym(")")),
-    ));
+    let oid_elem = || {
+        alt((
+            unsigned,
+            delimited(pair(identifier, sym("(")), unsigned, sym(")")),
+        ))
+    };
 
     map(
-        delimited(sym("{"), pair(opt(identifier), many0(oid_elem)), sym("}")),
+        delimited(
+            sym("{"),
+            alt((
+                map(pair(identifier, many0(oid_elem())), |(name, frag)| {
+                    (Some(name), frag)
+                }),
+                map(many1(oid_elem()), |frag| (None, frag)),
+            )),
+            sym("}"),
+        ),
         |(name, frag)| RawOidExpr {
             parent: name.unwrap_or("").to_string(),
             fragment: frag.into(),

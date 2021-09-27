@@ -455,7 +455,7 @@ impl Linker {
         let entry_num_oid = self.object_numeric_oids.get(table_entry_name)?;
         let table_name = self
             .numeric_oid_names
-            .get(&entry_num_oid[..(entry_num_oid.len() - 1)])?;
+            .get(&entry_num_oid[..(entry_num_oid.len().checked_sub(1)?)])?;
         self.interpret_table(table_name, entry_type_name).ok()
     }
 

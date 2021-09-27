@@ -190,16 +190,15 @@ impl Loader {
         Loader(Vec::new())
     }
 
-    /// Load a MIB module from a file.
+    /// Load a MIB module from a `&str`.
     ///
     /// This can be called repeatedly to load multiple MIB modules prior to compiling into a MIB.
-    pub fn load_file(&mut self, path: impl AsRef<Path>) -> Result<(), LoadFileError> {
+    pub fn load(&mut self, module_contents: &str) -> Result<(), LoadFileError> {
+        let (_, ParsedModule(this_module, mut decls)) = parse_module(module_contents)?;
+
         let module_name_fixups = vec![("RFC-1213".to_string(), "RFC1213-MIB".to_string())]
             .into_iter()
             .collect::<HashMap<_, _>>();
-
-        let file = String::from_utf8(std::fs::read(path.as_ref())?)?;
-        let (_, ParsedModule(this_module, mut decls)) = parse_module(&file)?;
 
         // Find the index of every Imports decl.
         let import_idxs = decls
@@ -254,5 +253,13 @@ impl Loader {
         );
 
         Ok(())
+    }
+
+    /// Load a MIB module from a file.
+    ///
+    /// This can be called repeatedly to load multiple MIB modules prior to compiling into a MIB.
+    pub fn load_file(&mut self, path: impl AsRef<Path>) -> Result<(), LoadFileError> {
+        let file_contents = String::from_utf8(std::fs::read(path.as_ref())?)?;
+        self.load(&file_contents)
     }
 }

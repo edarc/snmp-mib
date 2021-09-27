@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
 use sequence_trie::SequenceTrie;
@@ -455,6 +455,10 @@ impl Linker {
     fn find_effective_type(&self, given_type: &Type<Identifier>) -> Type<Identifier> {
         let mut effective_type = given_type.clone();
 
+        // Track the names of visited referents to detect circular definitions. TODO: This should
+        // be an error; for now just break out somewhere to stop interpretation from hanging.
+        let mut visited_referent_names = BTreeSet::new();
+
         loop {
             let new_effective_type =
                 if let PlainType::Referenced(ref referent_name, _) = effective_type.ty {
@@ -464,13 +468,15 @@ impl Linker {
                         .get(referent_name.local_name())
                         .is_some()
                     {
-                        break;
+                        None
+                    } else if !visited_referent_names.insert(referent_name.clone()) {
+                        None
                     } else {
                         self.type_defs.get(&referent_name)
                     }
                 } else {
-                    // The current effective_type is either None, or a Builtin type. We're done.
-                    break;
+                    // The current effective_type is a Builtin type. We're done.
+                    None
                 };
 
             // If the dereference into new_effective_type worked, update effective_type and go

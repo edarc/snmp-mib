@@ -142,6 +142,20 @@ impl Linker {
         rel: &BTreeMap<Identifier, OidExpr>,
         abs: &mut BTreeMap<Identifier, NumericOid>,
     ) -> Result<NumericOid, Identifier> {
+        let mut visited_ids = BTreeSet::new();
+        Self::link_oidexpr_to_numeric_oid_internal(name, def, rel, abs, &mut visited_ids)
+    }
+
+    fn link_oidexpr_to_numeric_oid_internal(
+        name: &Identifier,
+        def: &OidExpr,
+        rel: &BTreeMap<Identifier, OidExpr>,
+        abs: &mut BTreeMap<Identifier, NumericOid>,
+        visited_ids: &mut BTreeSet<Identifier>,
+    ) -> Result<NumericOid, Identifier> {
+        if !visited_ids.insert(name.clone()) {
+            return Err(name.clone());
+        }
         let linked_def = if def.base_identifier().is_root() {
             // The parent is root, so this def is linked already.
             def.clone()
@@ -151,9 +165,14 @@ impl Linker {
             NumericOid::new(this_fragment).into_oid_expr()
         } else if let Some(parent_def) = rel.get(def.base_identifier()) {
             // Parent is not linked. Recursively link it first.
-            let linked_parent_fragment =
-                Self::link_oidexpr_to_numeric_oid(def.base_identifier(), parent_def, rel, abs)?
-                    .index_by_fragment(def.fragment());
+            let linked_parent_fragment = Self::link_oidexpr_to_numeric_oid_internal(
+                def.base_identifier(),
+                parent_def,
+                rel,
+                abs,
+                visited_ids,
+            )?
+            .index_by_fragment(def.fragment());
             NumericOid::new(linked_parent_fragment).into_oid_expr()
         } else {
             // This def's parent is not root, and was in neither the rel or abs maps, so there is

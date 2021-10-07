@@ -168,11 +168,18 @@ pub enum InterpretationError {
     #[error("Table entry cannot be found for table: {table:?}")]
     MissingTableEntry { table: IdentifiedObj },
 
+    /// The object is a table entry, but the table object cannot be found.
+    #[error("Table cannot be found for table entry: {entry:?}")]
+    MissingParentTable { entry: IdentifiedObj },
+
     /// This object is a table using `AUGMENTS`, but the referent refers either to a non-table
     /// object, or to a table that does not have an `INDEX`.
     #[error("AUGMENTS {target} not valid: must reference a table with INDEX")]
     TableAugmentsTargetBad { target: Identifier },
 
-    #[error("Legacy -- to be removed")]
-    LegacyUnknown,
+    /// The object has a type that either isn't supported or has no meaning in SMI.
+    #[error("Built-in type {declared_type:?} has no SMI interpretation")]
+    UninterpretableType {
+        declared_type: BuiltinType<Identifier>,
+    },
 }

@@ -309,8 +309,7 @@ impl Linker {
                             ty: PI::Builtin(BI::Sequence(_)),
                             ..
                         } => Ok(SI::TableRow(
-                            self.interpret_table_entry(&name, referent_name)
-                                .ok_or(InterpretationError::LegacyUnknown)?,
+                            self.interpret_table_entry(&name, referent_name)?,
                         )),
 
                         // Referenced types that aren't well-known, and whose effective type is
@@ -348,10 +347,12 @@ impl Linker {
             PI::Builtin(BI::OctetString) => Ok(SI::Scalar(SS::Bytes)),
 
             // These theoretically don't occur in SMI, so don't interpret them.
-            PI::Builtin(BI::Sequence(_))
-            | PI::Builtin(BI::Boolean)
-            | PI::Builtin(BI::Choice(_))
-            | PI::Builtin(BI::Null) => Err(InterpretationError::LegacyUnknown),
+            PI::Builtin(ty @ BI::Sequence(_))
+            | PI::Builtin(ty @ BI::Boolean)
+            | PI::Builtin(ty @ BI::Choice(_))
+            | PI::Builtin(ty @ BI::Null) => {
+                Err(InterpretationError::UninterpretableType { declared_type: ty.clone() })
+            }
         }
     }
 
@@ -451,12 +452,21 @@ impl Linker {
         &self,
         table_entry_name: &Identifier,
         entry_type_name: &Identifier,
-    ) -> Option<SMITable> {
-        let entry_num_oid = self.object_numeric_oids.get(table_entry_name)?;
-        let table_name = self
-            .numeric_oid_names
-            .get(&entry_num_oid[..(entry_num_oid.len().checked_sub(1)?)])?;
-        self.interpret_table(table_name, entry_type_name).ok()
+    ) -> Result<SMITable, InterpretationError> {
+        let entry_num_oid = self
+            .object_numeric_oids
+            .get(table_entry_name)
+            .ok_or_else(|| InterpretationError::MissingNumericOID {
+                name: table_entry_name.clone(),
+            })?;
+        let table_name = entry_num_oid
+            .len()
+            .checked_sub(1)
+            .and_then(|end| self.numeric_oid_names.get(&entry_num_oid[..end]))
+            .ok_or_else(|| InterpretationError::MissingParentTable {
+                entry: IdentifiedObj::new(entry_num_oid.clone(), table_entry_name.clone()),
+            })?;
+        self.interpret_table(table_name, entry_type_name)
     }
 
     fn get_fields_if_sequence_type(
